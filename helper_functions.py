@@ -47,6 +47,32 @@ def degrees_to_feet(degrees):
     feet_per_degree = 364000  # 69 miles × 5280 ft/mile
     return round(degrees * feet_per_degree)
 
+def get_mps(mph):
+    """
+    Convert miles per hour to meters per second.
+    """
+    return mph * 1609.34 / 3600
+
+def mps_to_mph(mps):
+    """
+    Convert meters per second to miles per hour.
+    """
+    return mps * 3600 / 1609.34
+
+def meters_to_feet(meters):
+    """
+    Convert meters to feet.
+    """
+    return meters * 3.28084
+
+def feet_to_meters(feet):
+    """
+    Convert feet to meters.
+    """
+    return feet / 3.28084
+
+
+
 # -~-~-~-~-~-~-~-~-~-~-~-~ analysis -~-~-~-~-~-~-~-~-~-~-~-~
 def make_finished_agents_df(model_output):
     '''
