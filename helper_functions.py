@@ -11,41 +11,7 @@ import math
 from shapely.geometry import LineString
 from IPython.display import HTML
 
-# -~-~-~-~-~-~-~-~-~-~-~-~ gneneral -~-~-~-~-~-~-~-~-~-~-~-~
-def get_dps(mph):
-    '''
-    Args: 
-        mph (numeric): a speed value in miles per hour
-    Returns:
-        float: speed in degrees per secound
-    '''
-    mps =mph/3600.0 # 3600 secounds in an hour
-    dps = mps/69 # 69 miles in a degree 
-    return dps
 
-def get_mph(dps): 
-    '''
-    Args: 
-        dps (numeric): speed in degrees per secound
-    Returns:
-        float: speed in miles per hour
-    '''
-    dph =dps*3600.0 # 3600 mins in an hour
-    mph = dph*69 # 69 miles in a degree 
-    return mph
-
-def degrees_to_feet(degrees):
-    """
-    Approximate conversion from degrees to feet in EPSG:4326.
-    Args:
-        degrees (float): degrees lat/lon
-    Returns:
-        float: distance in ft or None if the input is inf, -inf, or NaN 
-    """
-    if not math.isfinite(degrees):
-        return None
-    feet_per_degree = 364000  # 69 miles × 5280 ft/mile
-    return round(degrees * feet_per_degree)
 
 def get_mps(mph):
     """
@@ -53,7 +19,7 @@ def get_mps(mph):
     """
     return mph * 1609.34 / 3600
 
-def mps_to_mph(mps):
+def get_mph(mps):
     """
     Convert meters per second to miles per hour.
     """
@@ -71,6 +37,11 @@ def feet_to_meters(feet):
     """
     return feet / 3.28084
 
+def meters_to_miles(meters):
+    """
+    Convert meters to miles.
+    """
+    return meters / 1609.34
 
 
 # -~-~-~-~-~-~-~-~-~-~-~-~ analysis -~-~-~-~-~-~-~-~-~-~-~-~
@@ -82,7 +53,7 @@ def make_finished_agents_df(model_output):
     finished_agents = pd.DataFrame(model_output)
     finished_agents =finished_agents.sort_values(by='AgentID')
     #make a travel time
-    finished_agents["follow_ft_at50mph"] = degrees_to_feet(get_dps(50)) * finished_agents["ideal_distance_multiplier"]
+    finished_agents["follow_ft_at50mph"] = meters_to_feet(get_mps(50)) * finished_agents["ideal_distance_multiplier"]
     finished_agents["travel_time"] = pd.to_timedelta(finished_agents["steps_taken"], unit="s").astype(str).str.extract(r'(\d+:\d{2})')
     # rounding
     round_cols = ['distance_traveled', 'approx_average_mph','acceptable_over', 'ideal_distance_multiplier','follow_ft_at50mph']
@@ -126,6 +97,38 @@ def make_travel_time_hist(finished_agents):
     plt.tight_layout()
     plt.show()
 
+def make_driving_actions_plots(df, speed_change_col="speed_change", action_col="driving_action"):
+    """
+    Creates a side-by-side bar plot and box plot based on driving actions.
+
+    Parameters:
+    - df: pandas DataFrame containing the driving data
+    - speed_change_col: column name representing speed changes (numeric)
+    - action_col: column name representing driving action categories (str)
+    """
+
+    # Prepare the figure with two subplots side-by-side
+    fig, axs = plt.subplots(1, 2, figsize=(14, 5))
+
+    # Bar plot: distribution of driving actions
+    action_counts = df[action_col].value_counts(normalize=True).reset_index()
+    action_counts.columns = [action_col, "percentage"]
+    sns.barplot(data=action_counts, x=action_col, y="percentage", ax=axs[0])
+    axs[0].set_title("Distribution of Driving Actions")
+    axs[0].set_ylabel("Percentage")
+    axs[0].set_xlabel("Driving Action")
+    axs[0].grid(axis="y", linestyle="--", alpha=0.4)
+
+    # Box plot: speed change by driving action
+    sns.boxenplot(data=df, x=action_col, y=speed_change_col, ax=axs[1], outlier_prop=0.00000001)
+    axs[1].set_title("Speed Change by Driving Action")
+    axs[1].set_ylabel("Speed Change")
+    axs[1].set_xlabel("Driving Action")
+    axs[1].grid(axis="y", linestyle="--", alpha=0.4)
+
+    plt.tight_layout()
+    plt.show()
+
 
 # -~-~-~-~-~-~-~-~-~-~-~-~ animation -~-~-~-~-~-~-~-~-~-~-~-~
 def animate_traffic(cars_full, road_gdf, interval=60, step_skip=1, watch=None, zoom=1):
@@ -133,33 +136,35 @@ def animate_traffic(cars_full, road_gdf, interval=60, step_skip=1, watch=None, z
     Create and return an HTML animation of vehicle movement along a road.
 
     Parameters:
-    - cars_full: pd.DataFrame with columns ['Step', 'AgentID', 'x', 'y']
-    - road_gdf: GeoDataFrame of points representing the road
-    - interval: time between frames in milliseconds
-    - step_skip: int, sample every nth step
-    - watch: int or None, if an AgentID is passed, zoom in on that car
+    - cars_full: pd.DataFrame with columns ['Step', 'AgentID', 'x', 'y', 'type']
+    - road_gdf: GeoDataFrame of road points
+    - interval: milliseconds between frames
+    - step_skip: sample every nth step
+    - watch: AgentID to focus on (optional)
 
     Returns:
     - HTML animation object
     """
+    cars_full['x'] = cars_full['pos'].apply(lambda p: p[0])
+    cars_full['y'] = cars_full['pos'].apply(lambda p: p[1])
     
+    # Prepare the road line
     road_line = LineString(road_gdf.geometry.tolist())
     x_road, y_road = road_line.xy
 
-    steps = sorted(set(cars_full.Step))[::step_skip]
+    # Get all unique steps to animate
+    steps = sorted(set(cars_full["Step"]))[::step_skip]
 
+    # Set up plot
     fig, ax = plt.subplots(figsize=(8, 6))
-    scat_all = ax.scatter([], [], s=20, color='red', label='Cars')
-    scat_watch = ax.scatter([], [], s=30, color='blue', label='Watched Car', edgecolor='k', linewidth=0.05)
-    ax.plot(x_road, y_road, color='black', linewidth=1)
+    ax.plot(x_road, y_road, color='black', linewidth=2, label="Road")
+    scat_all = ax.scatter([], [], s=20, label='Vehicles')
+    scat_watch = ax.scatter([], [], s=40, color='purple', label='Watched')
 
+    # Set axis limits if not watching
     if watch is None:
-        x_min, x_max = min(x_road) - 0.001, max(x_road) + 0.001
-        y_min, y_max = min(y_road), max(y_road)
-        ax.set_xlim(x_min, x_max)
-        ax.set_ylim(y_min, y_max)
-
-    print()
+        ax.set_xlim(min(x_road) - 0.001, max(x_road) + 0.001)
+        ax.set_ylim(min(y_road) - 0.001, max(y_road) + 0.001)
 
     def init():
         scat_all.set_offsets(np.empty((0, 2)))
@@ -167,30 +172,40 @@ def animate_traffic(cars_full, road_gdf, interval=60, step_skip=1, watch=None, z
         return scat_all, scat_watch
 
     def update(frame):
-        step_df = cars_full.loc[cars_full.Step == frame]
+        step_df = cars_full[cars_full["Step"] == frame]
 
+        # Plot all vehicles except the watched one
         if watch is not None:
-            watched = step_df[step_df.AgentID == watch]
-            others = step_df[step_df.AgentID != watch]
+            step_df_watch = step_df[step_df["AgentID"] == watch]
+            step_df_other = step_df[step_df["AgentID"] != watch]
         else:
-            watched = pd.DataFrame(columns=step_df.columns)
-            others = step_df
+            step_df_watch = step_df[step_df["AgentID"] == -1]  # empty
+            step_df_other = step_df
 
-        scat_all.set_offsets(others[['x', 'y']].values)
-        scat_watch.set_offsets(watched[['x', 'y']].values)
+        # Assign colors by type
+        colors = step_df_other["AgentType"].map({
+            "CarAgent": "red",
+            "BusAgent": "blue"
+        }).fillna("gray")
 
-        ax.set_title(f"Step {frame}", fontsize=14)
+        # Set offsets
+        scat_all.set_offsets(step_df_other[['x', 'y']].values)
+        scat_all.set_color(colors.values)
 
-        if watch is not None and not watched.empty:
-            wx, wy = watched.iloc[0][['x', 'y']]
-            tot_x_dist = max(x_road) - min(x_road)
-            # the window is the distance of the road in the x axis/2 (because you have to add and subtract to WX and WY)/ devided by the zoom
+        
+        if step_df_watch is not None and not step_df_watch.empty:
+            scat_watch.set_offsets(step_df_watch[['x', 'y']].values)
+            wx, wy = step_df_watch.iloc[0][['x', 'y']]
+            tot_x_dist = max(x_road) - min(x_road) # the window is the distance of the road in the x axis/2 (because you have to add and subtract to WX and WY)/ devided by the zoom
             window = tot_x_dist/2/zoom 
             ax.set_xlim(wx - window, wx + window)
             ax.set_ylim(wy - window, wy + window)
+        else:
+            scat_watch.set_offsets(np.empty((0, 2)))
 
+        ax.set_title(f"Step {frame}", fontsize=14)
         return scat_all, scat_watch
 
-    anim = FuncAnimation(fig, update, frames=steps, init_func=init, blit=False, repeat=True, interval=interval)
+    anim = FuncAnimation(fig, update, frames=steps, init_func=init, blit=False, interval=interval)
     plt.close()
     return HTML(anim.to_jshtml())
