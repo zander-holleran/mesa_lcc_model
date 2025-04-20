@@ -108,7 +108,7 @@ def make_driving_actions_plots(df, speed_change_col="speed_change", action_col="
     """
 
     # Prepare the figure with two subplots side-by-side
-    fig, axs = plt.subplots(1, 2, figsize=(14, 5))
+    fig, axs = plt.subplots(1, 2, figsize=(14, 5), sharex=True)
 
     # Bar plot: distribution of driving actions
     action_counts = df[action_col].value_counts(normalize=True).reset_index()
