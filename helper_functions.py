@@ -163,8 +163,25 @@ def animate_traffic(cars_full, road_gdf, interval=60, step_skip=1, watch=None, z
 
     # Set axis limits if not watching
     if watch is None:
-        ax.set_xlim(min(x_road) - 0.001, max(x_road) + 0.001)
-        ax.set_ylim(min(y_road) - 0.001, max(y_road) + 0.001)
+        ax.set_xlim(min(x_road) - 50, max(x_road) + 50)
+        ax.set_ylim(min(y_road) - 50, max(y_road) + 50)
+    
+    # Choose a point in meter‐coordinates to anchor your bar:
+    base_x = min(x_road) + 50     # 50 m in from the left
+    base_y = min(y_road) + 50     # 50 m up from the bottom
+    
+    bar_length = 1000             # 1 000 m
+    #tick_every = 100              # mark every 100 m
+    #tick_height = 20              # 20 m tall ticks
+    label_offset = 30             # 30 m above the bar for text
+    
+    # Draw the main bar
+    ax.add_patch(patches.Rectangle(
+        (base_x, base_y),
+        bar_length,        # width = 1 000 m
+        5,                 # thickness = 5 m
+        color="black"
+    ))
 
     def init():
         scat_all.set_offsets(np.empty((0, 2)))
