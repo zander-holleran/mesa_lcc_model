@@ -7,10 +7,11 @@ import seaborn as sns
 import pandas as pd
 import numpy as np
 import math
+from scipy.stats import truncnorm
 
 from shapely.geometry import LineString
 from IPython.display import HTML
-
+import matplotlib.patches as patches
 
 
 def get_mps(mph):
@@ -43,8 +44,69 @@ def meters_to_miles(meters):
     """
     return meters / 1609.34
 
+def make_truncnorm(upper, lower, var, mean=None):
+    '''
+    If a mean is not passed the average of upper and lower will be used
+    '''
+    if not mean:
+        mean = (upper+lower)/2
 
-# -~-~-~-~-~-~-~-~-~-~-~-~ analysis -~-~-~-~-~-~-~-~-~-~-~-~
+    return truncnorm((lower - mean)/var, (upper - mean)/var, loc=mean, scale=var)
+
+
+# -~-~-~-~-~-~-~-~-~-~-~-~ general analysis-~-~-~-~-~-~-~-~-~-~-~-~
+def make_colored_road_plot(road_gdf, color_var):
+    fig, ax = plt.subplots(figsize=(15, 6))
+    road_gdf.plot(column=color_var, cmap='viridis', legend=True, ax=ax, markersize=30)
+    
+    # Optional: Add axis title and labels
+    ax.set_title(f"SR210 colored by {color_var}")
+    ax.set_xlabel("Longitude")
+    ax.set_ylabel("Latitude")
+    plt.grid(True)
+    plt.show()
+
+def plot_param_grid_heatmap(var1_vals, var2_vals, func, param1_name, param2_name, fixed_params=None, round_to=2):
+    '''
+    Analyze effects of two parameters on the output of any function.
+
+    Parameters:
+        var1_vals: sequence of values for first varying parameter
+        var2_vals: sequence of values for second varying parameter
+        func: function to evaluate
+        param1_name: string name of the first varying parameter
+        param2_name: string name of the second varying parameter
+        fixed_params: dict of other parameter values to pass to func
+        round_to: rounding for displayed values
+        label1: label for x-axis
+        label2: label for y-axis
+        title: title for plot
+    '''
+    fixed_params = fixed_params or {}
+    
+    data = []
+    for y in var2_vals:
+        row = []
+        for x in var1_vals:
+            params = fixed_params.copy()
+            params[param1_name] = x
+            params[param2_name] = y
+            row.append(func(**params))
+        data.append(row)
+
+    df = pd.DataFrame(data, index=[round(y, 2) for y in var2_vals], columns=[round(x, 2) for x in var1_vals])
+    
+    plt.figure(figsize=(10, 6))
+    sns.heatmap(df, annot=True, fmt=f".{round_to}f", cmap="Reds", cbar_kws={"label": "Output"})
+    plt.xlabel(param1_name)
+    plt.ylabel(param2_name)
+    plt.title('Peram Grid Heatmap')
+    plt.tight_layout()
+    plt.show()
+
+
+
+# -~-~-~-~-~-~-~-~-~-~-~-~ analysis of mesa model outputs -~-~-~-~-~-~-~-~-~-~-~-~
 def make_driving_actions_plots(df, speed_change_col="speed_change", action_col="driving_action"):
     """
     Creates a side-by-side bar plot and box plot based on driving actions.
@@ -56,7 +118,7 @@ def make_driving_actions_plots(df, speed_change_col="speed_change", action_col="
     """
 
     # Prepare the figure with two subplots side-by-side
-    fig, axs = plt.subplots(1, 2, figsize=(14, 5), sharex=True)
+    fig, axs = plt.subplots(1, 2, figsize=(20, 5), sharex=True)
 
     # Bar plot: distribution of driving actions
     action_counts = df[action_col].value_counts(normalize=True).reset_index()
@@ -157,6 +219,35 @@ def make_vehicles_full_df(model):
 
 
 # -~-~-~-~-~-~-~-~-~-~-~-~ animation -~-~-~-~-~-~-~-~-~-~-~-~
+
+def make_scale_legend(ax, wx, wy):
+    #half baked make scale function 
+    # currently it calls ax.plot, this stays around on the plot. To fully fix ill need to update it instead. Currently its just commented out 
+    """
+    Draws a scale legend on the given axes at position (wx, wy).
+    """
+    base_x = wx
+    base_y = wy + 70  # position slightly above current view
+
+    bar_length = 200
+    tick_every = 50
+    tick_height = 20
+    label_offset = 30
+
+    # Draw the main bar
+    ax.add_patch(patches.Rectangle(
+        (base_x, base_y), bar_length, 5, color="black"
+    ))
+
+    # Draw tick marks & labels
+    for i in range(0, bar_length + 1, tick_every):
+        tx = base_x + i
+        ax.plot([tx, tx], [base_y, base_y + tick_height], color="black", linewidth=1)
+        if i % (tick_every * 2) == 0:  # label every 100 m
+            ax.text(tx, base_y + tick_height + label_offset,
+                    f"{i} m", ha="center", va="bottom", fontsize=8)
+
+
 def animate_traffic(cars_full, road_gdf, interval=60, step_skip=1, watch=None, zoom=1):
     """
     Create and return an HTML animation of vehicle movement along a road.
@@ -191,23 +282,6 @@ def animate_traffic(cars_full, road_gdf, interval=60, step_skip=1, watch=None, z
     if watch is None:
         ax.set_xlim(min(x_road) - 50, max(x_road) + 50)
         ax.set_ylim(min(y_road) - 50, max(y_road) + 50)
-    
-    # Choose a point in meter‐coordinates to anchor your bar:
-    base_x = min(x_road) + 50     # 50 m in from the left
-    base_y = min(y_road) + 50     # 50 m up from the bottom
-    
-    bar_length = 1000             # 1 000 m
-    #tick_every = 100              # mark every 100 m
-    #tick_height = 20              # 20 m tall ticks
-    label_offset = 30             # 30 m above the bar for text
-    
-    # Draw the main bar
-    ax.add_patch(patches.Rectangle(
-        (base_x, base_y),
-        bar_length,        # width = 1 000 m
-        5,                 # thickness = 5 m
-        color="black"
-    ))
 
     def init():
         scat_all.set_offsets(np.empty((0, 2)))
@@ -243,6 +317,8 @@ def animate_traffic(cars_full, road_gdf, interval=60, step_skip=1, watch=None, z
             window = tot_x_dist/2/zoom 
             ax.set_xlim(wx - window, wx + window)
             ax.set_ylim(wy - window, wy + window)
+
+            #make_scale_legend(ax, wx, wy)
         else:
             scat_watch.set_offsets(np.empty((0, 2)))
 
@@ -252,3 +328,105 @@ def animate_traffic(cars_full, road_gdf, interval=60, step_skip=1, watch=None, z
     anim = FuncAnimation(fig, update, frames=steps, init_func=init, blit=False, interval=interval)
     plt.close()
     return HTML(anim.to_jshtml())
+
+
+def animate_relative_distance(vehicle_df, agent_id, distance_behind):
+    """
+    Animate the relative positions of vehicles behind a reference agent.
+
+    Parameters:
+    - vehicle_df (pd.DataFrame): Contains ['Step', 'AgentID', 'distance_traveled']
+    - agent_id (int): The reference agent ID
+    - distance_behind (float): The maximum distance behind the reference agent to visualize
+
+    Returns:
+    - HTML animation object
+    """
+    # Filter to only include agents >= agent_id
+    vehicle_df = vehicle_df[vehicle_df["AgentID"] >= agent_id].copy()
+
+    # Determine reference distances per step
+    ref_distances = (
+        vehicle_df[vehicle_df["AgentID"] == agent_id]
+        .set_index("Step")["distance_traveled"]
+        .rename("ref_distance")
+    )
+
+    # Merge reference distances
+    vehicle_df = vehicle_df.merge(ref_distances, on="Step")
+    vehicle_df["distance_behind_ref"] = vehicle_df["ref_distance"] - vehicle_df["distance_traveled"]
+
+    # Filter to within distance_behind
+    vehicle_df = vehicle_df[vehicle_df["distance_behind_ref"] <= distance_behind]
+
+    print()
+    driving_action_colors = {
+        "coast": "gray",
+        'jitter':'purple',
+        "slow_accelerate":'lightgreen',
+        "accelerate": "green",
+        "smooth_break": "orange",
+        "prevent_pass": "red",
+    }
+
+    # Text label storage
+    text_labels = []
+
+    
+    # Set up plot
+    fig, ax = plt.subplots(figsize=(10, 2))
+    scat = ax.scatter([], [], s=60)
+    ax.set_xlim(-5, distance_behind+30)
+    ax.set_ylim(-1, 3)
+    ax.invert_xaxis()  # <-- this line flips the x-axis
+    ax.set_yticks([])
+    ax.axvline(x= 0, color='red', linestyle='--', label='Reference Agent')
+    ax.legend(loc='upper left')
+
+    # Add a legend for driving actions
+    handles = [plt.Line2D([0], [0], marker='o', color='w', label=label,
+                          markerfacecolor=color, markersize=8)
+               for label, color in driving_action_colors.items()]
+    ax.legend(handles=handles, loc='upper left', title="Driving Action")
+
+    # All unique steps
+    steps = sorted(vehicle_df["Step"].unique())
+
+    def init():
+        scat.set_offsets(np.empty((0, 2)))
+        return scat,
+
+    def update(frame):
+        nonlocal text_labels
+        # Clear existing text
+        for txt in text_labels:
+            txt.remove()
+        text_labels = []
+
+        
+        step_df = vehicle_df[vehicle_df["Step"] == frame]
+        xs = step_df["distance_behind_ref"]
+        coords = np.column_stack([xs, np.zeros(len(xs))])
+        scat.set_offsets(coords)
+        colors = step_df["driving_action"].map(driving_action_colors).fillna("black")
+        scat.set_color(colors)
+
+        # Add text labels
+        for _, row in step_df.iterrows():
+            if row["AgentID"] != agent_id:
+                gap = int(round(row["gap_m"])) if np.isfinite(row["gap_m"]) else "NA"
+                ideal_gap = int(round(row["ideal_gap_m"])) if np.isfinite(row["ideal_gap_m"]) else "NA"
+                text = f"{gap}/{ideal_gap}m"
+                label = ax.text(row["distance_behind_ref"], 0.6, text,
+                                ha='center', va='bottom', fontsize=7)
+                text_labels.append(label)
+                
+        ax.set_title(f"Step {frame}")
+        return scat,
+
+    anim = FuncAnimation(fig, update, frames=steps, init_func=init, blit=False, interval=100)
+    plt.close()
+    return HTML(anim.to_jshtml())
+
+
+
