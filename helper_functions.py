@@ -45,24 +45,37 @@ def meters_to_miles(meters):
 
 
 # -~-~-~-~-~-~-~-~-~-~-~-~ analysis -~-~-~-~-~-~-~-~-~-~-~-~
-def make_finished_agents_df(model_output):
-    '''
-    Takes - model.finished_agents - a list of dicts that represent the agent data at the final step
-    Returns - DataFrame - properly formatted finished_agents
-    '''
-    finished_agents = pd.DataFrame(model_output)
-    finished_agents =finished_agents.sort_values(by='AgentID')
-    #make a travel time
-    finished_agents["follow_ft_at50mph"] = meters_to_feet(get_mps(50)) * finished_agents["ideal_distance_multiplier"]
-    finished_agents["travel_time"] = pd.to_timedelta(finished_agents["steps_taken"], unit="s").astype(str).str.extract(r'(\d+:\d{2})')
-    # rounding
-    round_cols = ['distance_traveled', 'approx_average_mph','acceptable_over', 'ideal_distance_multiplier','follow_ft_at50mph']
-    finished_agents[round_cols] = round(finished_agents[round_cols], 2)
-    # make more cols
-    finished_agents["steps_behind_previous"] = finished_agents["created_at_step"].diff().fillna(0).astype(int)
-    finished_agents["pct_car_interactions"] = finished_agents.car_interactions/finished_agents.steps_taken
-    return finished_agents
+def make_driving_actions_plots(df, speed_change_col="speed_change", action_col="driving_action"):
+    """
+    Creates a side-by-side bar plot and box plot based on driving actions.
 
+    Parameters:
+    - df: pandas DataFrame containing the driving data
+    - speed_change_col: column name representing speed changes (numeric)
+    - action_col: column name representing driving action categories (str)
+    """
+
+    # Prepare the figure with two subplots side-by-side
+    fig, axs = plt.subplots(1, 2, figsize=(14, 5), sharex=True)
+
+    # Bar plot: distribution of driving actions
+    action_counts = df[action_col].value_counts(normalize=True).reset_index()
+    action_counts.columns = [action_col, "percentage"]
+    sns.barplot(data=action_counts, x=action_col, y="percentage", ax=axs[0])
+    axs[0].set_title("Distribution of Driving Actions")
+    axs[0].set_ylabel("Percentage")
+    axs[0].set_xlabel("Driving Action")
+    axs[0].grid(axis="y", linestyle="--", alpha=0.4)
+
+    # Box plot: speed change by driving action
+    sns.boxenplot(data=df, x=action_col, y=speed_change_col, ax=axs[1], outlier_prop=0.00000001)
+    axs[1].set_title("Speed Change by Driving Action")
+    axs[1].set_ylabel("Speed Change")
+    axs[1].set_xlabel("Driving Action")
+    axs[1].grid(axis="y", linestyle="--", alpha=0.4)
+
+    plt.tight_layout()
+    plt.show()
 
 def make_travel_time_hist(finished_agents):
     '''
@@ -97,37 +110,50 @@ def make_travel_time_hist(finished_agents):
     plt.tight_layout()
     plt.show()
 
-def make_driving_actions_plots(df, speed_change_col="speed_change", action_col="driving_action"):
-    """
-    Creates a side-by-side bar plot and box plot based on driving actions.
+    
+def make_finished_agents_df(model):
+    '''
+    Takes - model.finished_agents - a list of dicts that represent the agent data at the final step
+    Returns - DataFrame - properly formatted finished_agents
+    '''
+    finished_agents = model.finished_agents
+    finished_agents = pd.DataFrame(finished_agents)
+    finished_agents =finished_agents.sort_values(by='AgentID')
+    #make a travel time
+    finished_agents["follow_ft_at50mph"] = meters_to_feet(get_mps(50)) * finished_agents["ideal_distance_multiplier"]
+    finished_agents["travel_time"] = pd.to_timedelta(finished_agents["steps_taken"], unit="s").astype(str).str.extract(r'(\d+:\d{2})')
+    # rounding
+    round_cols = ['distance_traveled', 'approx_average_mph','acceptable_over', 'ideal_distance_multiplier','follow_ft_at50mph']
+    finished_agents[round_cols] = round(finished_agents[round_cols], 2)
+    # make more cols
+    finished_agents["steps_behind_previous"] = finished_agents["created_at_step"].diff().fillna(0).astype(int)
+    finished_agents["pct_car_interactions"] = finished_agents.car_interactions/finished_agents.steps_taken
 
-    Parameters:
-    - df: pandas DataFrame containing the driving data
-    - speed_change_col: column name representing speed changes (numeric)
-    - action_col: column name representing driving action categories (str)
-    """
+    print(f'N cars: {len(finished_agents)}, fake hours: {round(model.steps/3600,1)}')
+    # Make the nice histogram
+    make_travel_time_hist(finished_agents)
+    
+    return finished_agents
 
-    # Prepare the figure with two subplots side-by-side
-    fig, axs = plt.subplots(1, 2, figsize=(14, 5), sharex=True)
+def make_vehicles_full_df(model):
+    if model.log_agents ==False:
+        return None
+        
+    agent_data = model.datacollector.get_agent_vars_dataframe().reset_index()
+    vehicles_full = agent_data.loc[agent_data.AgentType.isin(['CarAgent', 'BusAgent'])].copy()
+    
+    # produce some lists of ids i might want to look at
+    bus_ids = list(vehicles_full.loc[vehicles_full.AgentType == 'BusAgent'].AgentID.unique())
+    slowest_ids = list(vehicles_full.groupby(by='AgentID', as_index=False).max('steps_taken').sort_values('steps_taken', ascending=False).AgentID[:5])
+    
+    print(f'''Bus IDs: {bus_ids}
+    Slow IDs: {slowest_ids}''')
 
-    # Bar plot: distribution of driving actions
-    action_counts = df[action_col].value_counts(normalize=True).reset_index()
-    action_counts.columns = [action_col, "percentage"]
-    sns.barplot(data=action_counts, x=action_col, y="percentage", ax=axs[0])
-    axs[0].set_title("Distribution of Driving Actions")
-    axs[0].set_ylabel("Percentage")
-    axs[0].set_xlabel("Driving Action")
-    axs[0].grid(axis="y", linestyle="--", alpha=0.4)
+    # display the driving actions graphs
+    make_driving_actions_plots(vehicles_full)
 
-    # Box plot: speed change by driving action
-    sns.boxenplot(data=df, x=action_col, y=speed_change_col, ax=axs[1], outlier_prop=0.00000001)
-    axs[1].set_title("Speed Change by Driving Action")
-    axs[1].set_ylabel("Speed Change")
-    axs[1].set_xlabel("Driving Action")
-    axs[1].grid(axis="y", linestyle="--", alpha=0.4)
+    return vehicles_full
 
-    plt.tight_layout()
-    plt.show()
 
 
 # -~-~-~-~-~-~-~-~-~-~-~-~ animation -~-~-~-~-~-~-~-~-~-~-~-~
