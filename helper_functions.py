@@ -366,6 +366,7 @@ def animate_relative_distance(vehicle_df, agent_id, distance_behind):
         "slow_accelerate":'lightgreen',
         "accelerate": "green",
         "smooth_break": "orange",
+        "speed_limit_break":"yellow",
         "prevent_pass": "red",
     }
 
