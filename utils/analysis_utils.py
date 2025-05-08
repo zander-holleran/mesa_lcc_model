@@ -2,6 +2,8 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
+import plotly.express as px
+
 
 from utils.unit_conversion_utils import get_mps, meters_to_feet  
 
@@ -167,5 +169,61 @@ def make_vehicles_full_df(model):
 
     return vehicles_full
 
+def plot_single_car_driving_actions(vehicles_full, issue_car_id):
+    issue_car_df = vehicles_full[vehicles_full.AgentID == issue_car_id]
+    fig = px.scatter(
+        issue_car_df, 
+        x="Step", 
+        y="speed", 
+        color="driving_action",
+        opacity=0.5,
+        title=f"Driving Actions for Car {issue_car_id}"
+    )
+    fig.update_layout(height=500, width=1000)  # Adjust size here
+    fig.show()
 
+def plot_agent_trajectories(vehicles_full, ids_list, y_var,step_range=(None, None)):
+    """
+    Plot agent trajectories over time using seaborn lineplot.
 
+    Parameters:
+    - df: pd.DataFrame with columns ['Step', 'AgentID', y_var]
+    - y_var: str, the column to use on the y-axis
+
+    Returns:
+    - Displays a line plot where each line is one AgentID
+
+    """
+    
+    df = vehicles_full.loc[vehicles_full.AgentID.isin(ids_list)]
+    start, end = step_range
+
+    if start is not None:
+        df = df[df['Step'] >= start]
+    if end is not None:
+        df = df[df['Step'] <= end]
+    
+    plt.figure(figsize=(10, 5))
+    sns.lineplot(data=df, x="Step", y=y_var, hue="AgentID", legend=False)
+
+     # Add labels to the start of each line
+    for agent_id in df['AgentID'].unique():
+        agent_df = df[df['AgentID'] == agent_id]
+        first_point = agent_df.iloc[0]
+        label = f"Agent:{agent_id} - ({first_point['AgentType']})"
+        plt.text(first_point["Step"], first_point[y_var]+.5, label, fontsize=8, ha='left', va='top')
+
+    plt.title(f"Agent Trajectories of {y_var} over Time", fontsize=14)
+    plt.xlabel("Step")
+    plt.ylabel(y_var)
+    plt.tight_layout()
+    plt.show()
+
+def plot_mean_feature(vehicles_full, feature): 
+    # Filter out rows where feature is not finite
+    vehicles_clean = vehicles_full[np.isfinite(vehicles_full[feature])]
+    # Then aggregate
+    mean_over_time = vehicles_clean.groupby('Step', as_index=False)[feature].mean()
+    sns.scatterplot(data=mean_over_time, x='Step', y=feature)
+    plt.xlabel("Step")
+    plt.ylabel(f'Mean {feature} by Step ')
