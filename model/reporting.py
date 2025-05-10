@@ -4,17 +4,17 @@ from utils import unit_conversion_utils as uc  # for get_mph, etc.
 from agents import VehicleAgent
 
 
-def get_average_time_to_top(self):
-        steps = [a["steps_taken"] for a in self.finished_agents if "steps_taken" in a]
-        if not steps:
-            return np.nan
-        return np.mean([s / 60 for s in steps])
+def get_average_time_to_top(model):
+    steps = [a["steps_taken"] for a in model.finished_agents if "steps_taken" in a]
+    if not steps:
+        return np.nan
+    return np.mean([s / 60 for s in steps])
 
-def get_average_car_interactions(self):
-    car_interactions = [a["car_interactions"] for a in self.finished_agents if "car_interactions" in a]
+def get_average_car_interactions(model):
+    car_interactions = [a["car_interactions"] for a in model.finished_agents if "car_interactions" in a]
     if not car_interactions:
         return np.nan
-    return np.mean([c for c in car_interactions])
+    return np.mean(car_interactions)
     
 
 agent_reporters={

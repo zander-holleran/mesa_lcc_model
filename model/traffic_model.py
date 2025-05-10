@@ -2,13 +2,17 @@ from mesa import Model
 from mesa.datacollection import DataCollector
 from mesa.space import ContinuousSpace
 
+# Import my agents
 from agents.vehicle_agent import VehicleAgent
-from agents.bus_agent     import BusAgent
-from agents.car_agent     import CarAgent
+from agents.bus_agent import BusAgent
+from agents.car_agent import CarAgent
 from agents.road_segment_agent import RoadSegmentAgent
 
+# import my utils
 from utils import unit_conversion_utils as uc  # for get_mph, etc.
 
+# import other parts of model
+import model.reporting as rep
 
 import geopandas as gpd
 import numpy as np
@@ -72,61 +76,13 @@ class TrafficModel(Model):
         )
         # place all the road segments in space - goes hand in hand with read point reation 
         for agent, point in zip(self.road_segments, self.road_points_gdf.geometry):self.space.place_agent(agent, (point.x, point.y))
-
-
-        
-
-        agent_reporters={
-            "AgentType": lambda a: a.__class__.__name__ ,
-            #'status': lambda a: a.status if isinstance(a, VehicleAgent) else None,
-            
-            'distance_traveled': lambda a: a.distance_traveled if hasattr(a, 'distance_traveled') else None,
-            'driving_action': lambda a: a.driving_action if isinstance(a, VehicleAgent) else None,
-            'speed_change': lambda a: uc.get_mph(a.speed_change) if isinstance(a, VehicleAgent) else None,
-            'speed_change_mps2': lambda a: a.speed_change if isinstance(a, VehicleAgent) else None,
-            'speed': lambda a: uc.get_mph(a.speed) if isinstance(a, VehicleAgent) else None,
-            'speed_mps': lambda a: a.speed if isinstance(a, VehicleAgent) else None,
-            'steps_taken': lambda a: a.steps_taken if isinstance(a, VehicleAgent) else None,
-            'gap_m':lambda a: a.gap if isinstance(a, VehicleAgent) else None,
-            'ideal_gap_m':lambda a: a.speed * a.ideal_distance_multiplier if isinstance(a, VehicleAgent) else None,
-            "next_vehicle": lambda a: a.next_agent.unique_id if isinstance(a, VehicleAgent) and a.next_agent is not None else None,
-            'pos':lambda a: a.pos if isinstance(a, VehicleAgent) else None # dont remove, need for visuals
-        }
-        
-        model_reporters = {
-            "avg_time_to_top": lambda m: m.get_average_time_to_top(),
-            "avg_car_interactions": lambda m: m.get_average_car_interactions(),
-            "bus_interval": lambda m: m.bus_interval,
-            "bus_capacity": lambda m: m.bus_capacity,
-            "bus_riders": lambda m: m.bus_riders,
-            "person_counter": lambda m: m.person_counter,
-            "bus_counter": lambda m: m.bus_counter,
-            "car_counter": lambda m: m.car_counter,
-            "p_generate": lambda m: m.p_generate,
-            "car_preference": lambda m: m.car_preference,
-            "FinishedAgentsSummary": lambda m: None  # Placeholder
-        
-        }
-
-
         
         if not self.batchrun: # this triggers if batch run is set to false
             self.datacollector = DataCollector(
-                model_reporters = model_reporters
-                , agent_reporters = agent_reporters
+                model_reporters = rep.model_reporters
+                , agent_reporters = rep.agent_reporters
             )
 
-    def get_average_time_to_top(self):
-        steps = [a["steps_taken"] for a in self.finished_agents if "steps_taken" in a]
-        if not steps:
-            return np.nan
-        return np.mean([s / 60 for s in steps])
-
-    def get_average_car_interactions(self):
-        car_interactions = [a["car_interactions"] for a in self.finished_agents if "car_interactions" in a]
-        if not car_interactions:
-            return np.nan
-        return np.mean([c for c in car_interactions])
     
     def generate_new_bus(self):
         """
