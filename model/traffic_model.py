@@ -1,6 +1,9 @@
+# genreal imports
 from mesa import Model
 from mesa.datacollection import DataCollector
 from mesa.space import ContinuousSpace
+import geopandas as gpd
+import numpy as np
 
 # Import my agents
 from agents.vehicle_agent import VehicleAgent
@@ -13,9 +16,7 @@ from utils import unit_conversion_utils as uc  # for get_mph, etc.
 
 # import other parts of model
 import model.reporting as rep
-
-import geopandas as gpd
-import numpy as np
+import model.generate as gen 
 
 
 #from model.reporting import agent_reporters, model_reporters
@@ -82,61 +83,6 @@ class TrafficModel(Model):
                 model_reporters = rep.model_reporters
                 , agent_reporters = rep.agent_reporters
             )
-
-    
-    def generate_new_bus(self):
-        """
-        Generate a new bus:
-        - First bus is generated at a random step (0–15 mins).
-        - Then follow a fixed interval based on bus_interval (in minutes).
-        - Never exceed max_buses on the road.
-        """
-        if self.person_counter >= self.max_persons:
-            return
-
-        if self.bus_interval == 0:
-            return 
-        current_step = self.steps
-        steps_per_interval = self.bus_interval * 60
-    
-        # First departure check
-        if not self.bus_generation_started:
-            if current_step >= self.bus_first_departure:
-                self.bus_generation_started = True
-            else:
-                return  # Still waiting for the randomized first departure
-    
-        # After the first departure
-        if (current_step - self.bus_first_departure) % steps_per_interval == 0:    
-            new_bus = BusAgent.create_agents(model=self, n=1, road_points_gdf=self.road_points_gdf)
-            self.agents.add(*new_bus)
-            #self.agents.add(new_bus)  # Use .add(), not .add_agents() or model-level methods
-            self.bus_counter += 1
-            self.person_counter += self.at_bus_stop
-            self.bus_riders += self.at_bus_stop 
-            self.at_bus_stop = 0 
-
-
-    def generate_person(self):
-        if self.person_counter >= self.max_persons:
-            return
-
-    
-        vehicles = self.agents.select(agent_type=VehicleAgent)
-        if self.person_counter > 0:
-            if not vehicles:
-                return  # No cars yet to check
-            if self.space.get_distance(vehicles[-1].pos, self.start_point) < 1:
-                self.too_close_counter += 1
-                return
-    
-        if self.random.random() < self.p_generate:
-            if (self.random.random() < self.car_preference) or (self.at_bus_stop >= self.bus_capacity):
-                new_car = CarAgent.create_agents(model=self, n=1, road_points_gdf=self.road_points_gdf)
-                self.agents.add(*new_car) 
-                self.person_counter += 1
-            else:
-                self.at_bus_stop+=1 
    
     def model_stop_process(self):
         # add agent summary data to the datacollector
@@ -145,9 +91,9 @@ class TrafficModel(Model):
         
     def step(self):
         # generate bus 
-        self.generate_person()
+        gen.generate_person(self)
         # generate a new car based on a simple probability 
-        self.generate_new_bus()
+        gen.generate_new_bus(self)
         
         # Shuffle agent execution and step them - this calls the step functions of the agents
         self.agents.do("adjust_speed")
