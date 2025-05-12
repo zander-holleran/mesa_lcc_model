@@ -6,7 +6,8 @@ from agents.road_segment_agent import RoadSegmentAgent
 import utils.unit_conversion_utils as uc
 
 
-
+# this has to be externial to VehicleAgent because each VehicleAgent gets one accel() function build_empirical_accel_function produces an accel(). 
+# it would not work if VehicleAgent got build_empirical_accel_function
 def build_empirical_accel_function(pctile, mean_shift=-.2 , var_streach=1.3):
     """
     Builds a function that estimates acceleration (in m/s²)
@@ -90,20 +91,19 @@ class VehicleAgent(Agent):
         # init all the road segement data 
         self.road_segments = self.model.agents.select(agent_type=RoadSegmentAgent)
 
-        # Establish the Vehicles positio n 
+        # Establish the Vehicles position 
         self.path = self.road_segments.get('position')
         self.path_index = 0
+        self.last_path_index = 0
+
         self.model.space.place_agent(self, self.path[0])  # <-- here is the intial place agent
 
         
     def end_of_road(self):
-       
-        '''If at the last segment, remove the vehicle'''
-
+        '''this is where one part of finished agents reporting occures, is paired with '''
         if self.path_index >= len(self.path) - 1:
             self.status = "arrived"
             
-
             self.model.finished_agents.append({
                 "AgentID": self.unique_id,
                 'AgentType': self.__class__.__name__,
@@ -294,12 +294,11 @@ class VehicleAgent(Agent):
         
         while distance_to_travel > 0 and not self.end_of_road():
             next_target = np.array(self.path[self.path_index + 1])
-            
             direction = self.model.space.get_heading(pos, next_target)
             distance = self.model.space.get_distance(pos, next_target)
     
             if distance < distance_to_travel:
-                self.path_index += 1
+                self.path_index += 1    
                 distance_to_travel -= distance
                 pos = next_target
                 new_position = pos
@@ -308,7 +307,13 @@ class VehicleAgent(Agent):
                 new_position = pos + step_vector
                 distance_to_travel = 0
 
+        # after you have figured out where ur going to move to 
+        # 1) add yourself to that road_segment's vehicles_here
+        new_segment = self.road_segments[self.path_index]
+        new_segment.vehicles_here.append(self)
+        # 2) incroment the steps taken 
         self.steps_taken += 1  
+        # 3) actually move the agent
         self.model.space.move_agent(self, tuple(new_position))
 
 

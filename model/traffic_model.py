@@ -91,7 +91,7 @@ class TrafficModel(Model):
         self.running = False
         
     def step(self):
-        #clear vehicles here from the roads
+        #clear vehicles here from the roads - necessary for road segment analysis
         for segment in self.road_segments:
             segment.vehicles_here.clear()
         

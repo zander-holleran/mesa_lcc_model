@@ -2,6 +2,8 @@ from mesa.datacollection import DataCollector
 import numpy as np
 from utils import unit_conversion_utils as uc  # for get_mph, etc.
 from agents import VehicleAgent
+from collections import defaultdict
+import utils.unit_conversion_utils as uc
 
 
 def get_average_time_to_top(model):
@@ -15,6 +17,36 @@ def get_average_car_interactions(model):
     if not car_interactions:
         return np.nan
     return np.mean(car_interactions)
+
+def report_volume_by_section(model):
+    section_counts = defaultdict(int)
+    for segment in model.road_segments:
+        section = segment.road_section
+        section_counts[section] += len(segment.vehicles_here)
+
+    #section_counts["total"] = sum(section_counts.values())
+    return dict(section_counts)
+
+def report_avg_speed_by_section(model):
+    from collections import defaultdict
+
+    speed_sums = defaultdict(float)
+    count_by_section = defaultdict(int)
+
+    for segment in model.road_segments:
+        section = segment.road_section
+        for vehicle in segment.vehicles_here:
+            if hasattr(vehicle, "speed") and vehicle.speed is not None:
+                speed_sums[section] += vehicle.speed
+                count_by_section[section] += 1
+
+    avg_speed_by_section = {
+        section: uc.get_mph(speed_sums[section] / count_by_section[section])
+        if count_by_section[section] > 0 else 0.0
+        for section in range(1, 6)
+    }
+
+    return avg_speed_by_section
     
 
 agent_reporters={
@@ -35,17 +67,16 @@ agent_reporters={
 }
 
 model_reporters = {
-    "avg_time_to_top": lambda m: get_average_time_to_top(m),
-    "avg_car_interactions": lambda m: get_average_car_interactions(m),
-    "bus_interval": lambda m: m.bus_interval,
-    "bus_capacity": lambda m: m.bus_capacity,
-    "bus_riders": lambda m: m.bus_riders,
+    "FinishedAgentsSummary": lambda m: None,  # required for finished agents to work
+    "avg_time_to_top": get_average_time_to_top,
+    "avg_car_interactions": get_average_car_interactions,
     "person_counter": lambda m: m.person_counter,
     "bus_counter": lambda m: m.bus_counter,
     "car_counter": lambda m: m.car_counter,
-    "p_generate": lambda m: m.p_generate,
-    "car_preference": lambda m: m.car_preference,
-    "FinishedAgentsSummary": lambda m: None  # Placeholder
+    "bus_riders": lambda m: m.bus_riders,
+    "volume_by_section": report_volume_by_section,
+    'speed_by_section':report_avg_speed_by_section
+
 
 }
 

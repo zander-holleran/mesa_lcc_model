@@ -8,7 +8,7 @@ import plotly.express as px
 from utils.unit_conversion_utils import get_mps, meters_to_feet  
 
 
-# -~-~-~-~-~-~-~-~-~-~-~-~ general analysis - should be able to be used independent of project spicific data -~-~-~-~-~-~-~-~-~-~-~-~
+# -~-~-~-~-~-~-~-~-~-~-~-~ general analysis - should be able to be used independent of main -~-~-~-~-~-~-~-~-~-~-~-~
 def plot_param_grid_heatmap(var1_vals, var2_vals, func, param1_name, param2_name, fixed_params=None, round_to=2):
     '''
     Analyze effects of two parameters on the output of any function.
@@ -48,7 +48,7 @@ def plot_param_grid_heatmap(var1_vals, var2_vals, func, param1_name, param2_name
     plt.show()
 
 # -~-~-~-~-~-~-~-~-~-~-~-~ road analysis -~-~-~-~-~-~-~-~-~-~-~-~
-def make_colored_road_plot(road_gdf, color_var):
+def plot_colored_road(road_gdf, color_var):
     fig, ax = plt.subplots(figsize=(15, 6))
     road_gdf.plot(column=color_var, cmap='viridis', legend=True, ax=ax, markersize=30)
     
@@ -59,8 +59,11 @@ def make_colored_road_plot(road_gdf, color_var):
     plt.grid(True)
     plt.show()
 
-# -~-~-~-~-~-~-~-~-~-~-~-~ mesa model output helpers -~-~-~-~-~-~-~-~-~-~-~-~
-def make_driving_actions_plots(df, speed_change_col="speed_change", action_col="driving_action"):
+
+# -~-~-~-~-~-~-~-~-~-~-~-~ used in main -~-~-~-~-~-~-~-~-~-~-~-~
+
+##  -~-~-~-~-~-~-~-~-~-~-~-~ Stage 1: takes the model as input or used in function that do so -~-~-~-~-~-~-~-~-~-~-~-~
+def plot_driving_actions(df, speed_change_col="speed_change", action_col="driving_action"): # used in clean_vehicle_agent_data
     """
     Creates a side-by-side bar plot and box plot based on driving actions.
 
@@ -92,7 +95,7 @@ def make_driving_actions_plots(df, speed_change_col="speed_change", action_col="
     plt.tight_layout()
     plt.show()
 
-def make_travel_time_hist(finished_agents):
+def plot_travel_time_hist(finished_agents): # used in make_finished_agents_df
     '''
     Displays a nice histogram of the travel times
 
@@ -126,7 +129,7 @@ def make_travel_time_hist(finished_agents):
     plt.show()
 
     
-def make_finished_agents_df(model):
+def finished_agents_summary_df(model):
     '''
     Takes - model.finished_agents - a list of dicts that represent the agent data at the final step
     Returns - DataFrame - properly formatted finished_agents
@@ -146,11 +149,11 @@ def make_finished_agents_df(model):
 
     print(f'N cars: {len(finished_agents)}, fake hours: {round(model.steps/3600,1)}')
     # Make the nice histogram
-    make_travel_time_hist(finished_agents)
+    plot_travel_time_hist(finished_agents)
     
     return finished_agents
 
-def make_vehicles_full_df(model):
+def vehicle_agent_data_time_series(model):
     if model.batchrun ==True:
         return None
         
@@ -165,10 +168,34 @@ def make_vehicles_full_df(model):
     Slow IDs: {slowest_ids}''')
 
     # display the driving actions graphs
-    make_driving_actions_plots(vehicles_full)
+    plot_driving_actions(vehicles_full)
 
     return vehicles_full
 
+
+def model_data_time_series(model):   
+    model_df = model.datacollector.get_model_vars_dataframe()
+    model_df.drop(columns='FinishedAgentsSummary', inplace=True) # get rid of FinishedAgentsSummary
+    # create the density col
+    
+    ## this info here is static from the road processing section 
+    section_miles_dict = {1: 3.664933, 2: 3.066007, 3: 3.065791, 4: 1.550799, 5: 0.962587}
+    def calc_density(vol_dict):
+        return {
+            section: vol / section_miles_dict[section]
+            for section, vol in vol_dict.items()
+            if section in section_miles_dict and section_miles_dict[section] > 0
+        }
+    
+    model_df["density_by_section"] = model_df["volume_by_section"].apply(calc_density)
+    return model_df
+ 
+
+
+
+
+    
+##  -~-~-~-~-~-~-~-~-~-~-~-~ Stage 2: takes a stage one df as input -~-~-~-~-~-~-~-~-~-~-~-~
 def plot_single_car_driving_actions(vehicles_full, issue_car_id):
     issue_car_df = vehicles_full[vehicles_full.AgentID == issue_car_id]
     fig = px.scatter(
@@ -227,3 +254,52 @@ def plot_mean_feature(vehicles_full, feature):
     sns.scatterplot(data=mean_over_time, x='Step', y=feature)
     plt.xlabel("Step")
     plt.ylabel(f'Mean {feature} by Step ')
+
+
+def plot_section_trends(model_ts, col, window):
+    """
+    Creates an interactive Plotly line plot of a time-varying dictionary column from model output, 
+    showing trends for each road section over time.
+
+    Parameters:
+    ----------
+    model_ts : pandas.DataFrame
+        The model output DataFrame containing a column of dictionaries (e.g., volume_by_section).
+    
+    col : str
+        The name of the column containing dictionary values, where keys represent road sections
+        and values are the variable of interest (e.g., volume(_by_section), average speed(_by_section)).
+    
+    window : int
+        The window size for rolling mean smoothing applied to each section's time series.
+
+    Returns:
+    -------
+    None. Displays an interactive Plotly line chart with zoom, pan, and legend filtering.
+    """
+    prefix = col.removesuffix("_by_section")
+    # dict col to wide
+    col_data = model_ts[col].apply(pd.Series) 
+    col_data["Step"] = col_data.index 
+    # wide to long
+    col_data = col_data.melt(id_vars="Step", var_name="Section", value_name=prefix)
+    # smooth things out, window is a peram 
+    col_data[prefix] = (
+        col_data
+        .groupby("Section")[prefix]
+        .transform(lambda x: x.rolling(window=window, center=True, min_periods=1).mean())
+    )
+    
+    # Plotly interactive line plot
+    fig = px.line(
+        col_data,
+        x="Step",
+        y=prefix,
+        color="Section",
+        title=f"{prefix.replace('_', ' ').title()} Over Time by Section",
+        labels={"Step": "Simulation Step", prefix: prefix.title()},
+        template="plotly_white"
+    )
+
+    fig.update_layout(hovermode="x unified")
+    fig.show()
