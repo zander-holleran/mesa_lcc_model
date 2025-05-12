@@ -72,10 +72,11 @@ class TrafficModel(Model):
             n=len(self.road_points_gdf), 
             position=[(point.x, point.y) for point in self.road_points_gdf.geometry], # need to be passed as a list
             speed_limit=[speed_limit for speed_limit in self.road_points_gdf.speed_limit],
+            road_section = [road_section for road_section in self.road_points_gdf.road_section],
             curvature = [curvature for curvature in self.road_points_gdf.curvature],
             linked_coord=[linked_coord for linked_coord in self.road_points_gdf.linked_coord]
         )
-        # place all the road segments in space - goes hand in hand with read point reation 
+        # place all the road segments in space - goes hand in hand with read point creation 
         for agent, point in zip(self.road_segments, self.road_points_gdf.geometry):self.space.place_agent(agent, (point.x, point.y))
         
         if not self.batchrun: # this triggers if batch run is set to false
@@ -90,20 +91,23 @@ class TrafficModel(Model):
         self.running = False
         
     def step(self):
-        # generate bus 
+        #clear vehicles here from the roads
+        for segment in self.road_segments:
+            segment.vehicles_here.clear()
+        
+        # generate functions
         gen.generate_person(self)
-        # generate a new car based on a simple probability 
         gen.generate_new_bus(self)
         
-        # Shuffle agent execution and step them - this calls the step functions of the agents
+        # action functions
         self.agents.do("adjust_speed")
         self.agents.do("move_along_path")
 
-        # Collect data before stepping
+        # Collect data
         if not self.batchrun:
             self.datacollector.collect(self)
 
-        # Stop model when all generated cars have been removed
+        # Stop model when all generated Vehiclea have been removed
         if self.person_counter == self.max_persons:
             remaining_vehicles = self.agents.select(agent_type=VehicleAgent)
             if len(remaining_vehicles) == 0:
