@@ -6,6 +6,8 @@ class PersonAgent(Agent):
         super().__init__(model)
         self.position = position  # The index of the segment
         self.status = 'im a person'
+        self.car_preference = .5
+        self.time_preference = 0 
 
     def adjust_speed(self):
         """Tracks occupancy but does not move."""
