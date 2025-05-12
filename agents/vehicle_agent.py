@@ -62,6 +62,11 @@ def vert_decel(slope_deg):
     vert_decel = 9.81* np.sin(slope_rad)
     return vert_decel
 
+
+
+# ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
+# ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~- The actual VehicleAgent Class ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-
+# ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
     
 class VehicleAgent(Agent):
     def __init__(self, model):
@@ -80,6 +85,8 @@ class VehicleAgent(Agent):
         self.gap = 0 
         self.next_agent = None
         self.driving_action = None
+        self.posted_speed_limit = None
+        self.implicit_speed_limit = None
 
         # Speed control tuning parameters (can be overridden)
         self.ideal_distance_multiplier = None
@@ -94,7 +101,6 @@ class VehicleAgent(Agent):
         # Establish the Vehicles position 
         self.path = self.road_segments.get('position')
         self.path_index = 0
-        self.last_path_index = 0
 
         self.model.space.place_agent(self, self.path[0])  # <-- here is the intial place agent
 
@@ -187,6 +193,7 @@ class VehicleAgent(Agent):
         # 1. Get the 5 agents
         next_road_agents = list(self.road_segments)[self.path_index:self.path_index+4]
         posted_limit = [agent.speed_limit for agent in next_road_agents]
+        self.posted_speed_limit=posted_limit[0]
         curvatures = [agent.curvature for agent in next_road_agents]
         
         # weighted averages
@@ -195,9 +202,10 @@ class VehicleAgent(Agent):
         average_curvature = np.average(curvatures, weights=weights)
 
         # enter the info in to the curve adjust function 
-        implicit_speed_limit = curve_adjust(self.curve_responce, average_curvature, average_posted_limit)
-        
-        return  uc.get_mps(implicit_speed_limit + self.acceptable_over)
+        curve_speed_limit_mph = curve_adjust(self.curve_responce, average_curvature, average_posted_limit)
+        implicit_speed_limit_mph = curve_speed_limit_mph + self.acceptable_over
+        self.implicit_speed_limit = implicit_speed_limit_mph
+        return  uc.get_mps(implicit_speed_limit_mph)
 
     def less_smooth_brake(self, gap, ideal_gap):
         """
@@ -227,10 +235,10 @@ class VehicleAgent(Agent):
         if speed < speed_limit:
             # this should never be triggered but i added anyway to make sure it didnt trip an error
             return 0
-        mph_over = uc.get_mph(speed)-uc.get_mph(speed_limit) # used pct over because speed_limit and speed come in in mps 
+        mph_over = uc.get_mph(speed)-uc.get_mph(speed_limit) 
         #print(mph_over)
         if mph_over > 7: 
-            return 1.1
+            return 1.1 
         elif mph_over > 2:
             return .5
         elif mph_over > 0:
@@ -240,7 +248,7 @@ class VehicleAgent(Agent):
     def adjust_speed(self):
         ''' takes self from self uses'''
         ideal_gap, gap  = self.get_gap() 
-        speed_limit = self.get_speed_limit()
+        implicit_speed_limit = self.get_speed_limit()
 
         # save the current speed 
         old_speed = self.speed 
@@ -253,10 +261,10 @@ class VehicleAgent(Agent):
             self.speed -= self.less_smooth_brake(gap=gap, ideal_gap=ideal_gap)
 
         # 3) if outside the jitter threashhold see if the car is above speed limit, if so break
-        elif self.speed > speed_limit:
+        elif self.speed > implicit_speed_limit:
             self.driving_action = 'speed_limit_break'
             self.break_cooldown = 3
-            self.speed -= self.speed_limit_brake(speed_limit=speed_limit, speed=self.speed)
+            self.speed -= self.speed_limit_brake(speed_limit=implicit_speed_limit, speed=self.speed)
             
         # 4) if outside the jitter threashhold & below speed limit & max speed then speed up 
         elif self.break_cooldown in [4,5]:
