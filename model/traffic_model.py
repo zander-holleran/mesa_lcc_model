@@ -79,15 +79,15 @@ class TrafficModel(Model):
         # place all the road segments in space - goes hand in hand with read point creation 
         for agent, point in zip(self.road_segments, self.road_points_gdf.geometry):self.space.place_agent(agent, (point.x, point.y))
         
-        if not self.batchrun: # this triggers if batch run is set to false
-            self.datacollector = DataCollector(
-                model_reporters = rep.model_reporters
-                , agent_reporters = rep.agent_reporters
-            )
+        if self.batchrun: 
+            self.datacollector = DataCollector(model_reporters = rep.model_reporters)
+        else:
+            self.datacollector = DataCollector(model_reporters = rep.model_reporters, agent_reporters = rep.agent_reporters)
    
     def model_stop_process(self):
         # add agent summary data to the datacollector
-        self.datacollector.model_vars["FinishedAgentsSummary"][-1] = self.finished_agents
+        if not self.batchrun:
+            self.datacollector.model_vars["FinishedAgentsSummary"][-1] = self.finished_agents
         self.running = False
         
     def step(self):
@@ -104,8 +104,7 @@ class TrafficModel(Model):
         self.agents.do("move_along_path")
 
         # Collect data
-        if not self.batchrun:
-            self.datacollector.collect(self)
+        self.datacollector.collect(self)
 
         # Stop model when all generated Vehiclea have been removed
         if self.person_counter == self.max_persons:
@@ -126,5 +125,3 @@ class TrafficModel(Model):
 
 
 
-        ##
-             
