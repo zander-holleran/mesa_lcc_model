@@ -108,6 +108,7 @@ agent_reporters={
 
 model_reporters = {
     "FinishedAgentsSummary": lambda m: None,  # required for finished agents to work
+    'step':lambda m: m.steps,
     "avg_time_to_top": get_average_time_to_top,
     "avg_car_interactions": get_average_car_interactions,
     "avg_posted_sl_delta":get_average_speed_relative_to_posted_sl,

@@ -25,33 +25,30 @@ import model.generate as gen
 class TrafficModel(Model):
     """Mesa model simulating traffic on the canyon road with a car cap."""
 
-    def __init__(self, road_gdf, max_steps=50000, seed=123, batchrun=False,
+    def __init__(self, road_gdf, max_steps=50000, seed=123, batchrun=False, collect_every_n=1, 
                  p_generate=.001, max_persons=50,
                  bus_interval=30, car_preference=1, bus_capacity=30):
         super().__init__(seed=seed)
         #model perams
-        self.batchrun = batchrun
         self.road_points_gdf = road_gdf
-        self.start_point = road_gdf.iloc[0].geometry.coords[0]  
         self.max_steps = max_steps
+        self.batchrun = batchrun
+        self.collect_every_n = collect_every_n
+        self.start_point = road_gdf.iloc[0].geometry.coords[0]  # this is used one time in generate.py, could remove
     
-        # car perams
+        # car centric perams
         self.p_generate = p_generate  # Probability of new car each step
         self.max_persons = max_persons  # Maximum number of persons allowed
         
         
-        # bus perams
+        # bus centric perams
         self.bus_interval = bus_interval
         if self.bus_interval == 0: 
             self.car_preference = 1 
         else: 
             self.car_preference = car_preference
-        
         self.bus_capacity = bus_capacity
-        self.bus_riders = 0 
-        self.at_bus_stop = 0 
         self.bus_first_departure = self.random.randint(0, 5 * 60)  # Random step between 0 and 5 mins
-        self.bus_generation_started = False
         
         
         # verious trackers
@@ -59,6 +56,8 @@ class TrafficModel(Model):
         self.person_counter = 0 
         self.bus_counter = 0 
         self.car_counter = 0 
+        self.bus_riders = 0 
+        self.at_bus_stop = 0 
         self.finished_agents = [] 
             
         # Set up ContinuousSpace
@@ -104,7 +103,8 @@ class TrafficModel(Model):
         self.agents.do("move_along_path")
 
         # Collect data
-        self.datacollector.collect(self)
+        if (self.steps % self.collect_every_n) == 0:
+            self.datacollector.collect(self)
 
         # Stop model when all generated Vehiclea have been removed
         if self.person_counter == self.max_persons:
