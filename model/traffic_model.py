@@ -4,6 +4,7 @@ from mesa.datacollection import DataCollector
 from mesa.space import ContinuousSpace
 import geopandas as gpd
 import numpy as np
+from tqdm import tqdm
 
 # Import my agents
 from agents.vehicle_agent import VehicleAgent
@@ -25,21 +26,23 @@ import model.generate as gen
 class TrafficModel(Model):
     """Mesa model simulating traffic on the canyon road with a car cap."""
 
-    def __init__(self, road_gdf, max_steps=50000, seed=123, batchrun=False, collect_every_n=1, 
-                 p_generate=.001, max_persons=50,
+    def __init__(self, road_gdf, ecs_df, max_steps=50000, seed=123, batchrun=False, collect_every_n=1, 
+                 start_hr=7, traffic_percentile=None, p_generate=None, max_persons=50,
                  bus_interval=30, car_preference=1, bus_capacity=30):
         super().__init__(seed=seed)
         #model perams
         self.road_points_gdf = road_gdf
+        self.expected_counts_seconds = ecs_df
         self.max_steps = max_steps
         self.batchrun = batchrun
         self.collect_every_n = collect_every_n
         self.start_point = road_gdf.iloc[0].geometry.coords[0]  # this is used one time in generate.py, could remove
     
         # car centric perams
+        self.sec_after_five = round((start_hr-5)*3600)
+        self.traffic_percentile = 90
         self.p_generate = p_generate  # Probability of new car each step
         self.max_persons = max_persons  # Maximum number of persons allowed
-        
         
         # bus centric perams
         self.bus_interval = bus_interval
@@ -58,12 +61,12 @@ class TrafficModel(Model):
         self.car_counter = 0 
         self.bus_riders = 0 
         self.at_bus_stop = 0 
-        self.finished_agents = [] 
-            
+        self.finished_agents = []
+        
         # Set up ContinuousSpace
-        buffer = .0001
+        buffer = 100
         minx, miny, maxx, maxy = road_gdf.total_bounds
-        self.space = ContinuousSpace(x_min=minx - buffer, x_max=maxx + buffer, y_min=miny - buffer, y_max=maxy + buffer, torus=False)
+        self.space = ContinuousSpace(x_min=minx - buffer, x_max=maxx + buffer, y_min=miny - buffer, y_max=maxy + 100, torus=False)
 
         # Create road segment agents - this just creates them in a loop setting the position via the gdf point
         self.road_segments = RoadSegmentAgent.create_agents( 
@@ -93,6 +96,10 @@ class TrafficModel(Model):
         #clear vehicles here from the roads - necessary for road segment analysis
         for segment in self.road_segments:
             segment.vehicles_here.clear()
+
+        if self.traffic_percentile:
+            self.p_generate = self.expected_counts_seconds.iloc[self.sec_after_five, self.traffic_percentile]
+            self.sec_after_five += 1
         
         # generate functions
         gen.generate_person(self)
@@ -118,10 +125,13 @@ class TrafficModel(Model):
             print(f"Reached max step count ({self.max_steps}). Stopping model.")
             self.model_stop_process()
 
+    
     def run_model(self):
-        while self.running:
+        for _ in tqdm(range(self.max_steps), desc="Simulating", unit="step"):
+            if not self.running:
+                break
+        #while self.running:
             self.step()
-
 
 
 
