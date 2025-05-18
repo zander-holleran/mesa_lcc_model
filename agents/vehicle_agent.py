@@ -73,7 +73,7 @@ class VehicleAgent(Agent):
         super().__init__(model)
 
         self.status = "driving"
-        self.speed = uc.get_mps(1) # starting speed
+        self.speed = uc.get_mps(50) # starting speed: 52.55 was the mean of first step implicit_sl for 300 vehicles
         self.break_cooldown = 0
         
         # For data collection 
@@ -135,7 +135,7 @@ class VehicleAgent(Agent):
         '''
         # check if 1) next car is already saved & 2)it is driving. This works because self.next_agent existing is tested first
         if self.next_agent and self.next_agent.status == "driving":
-             return
+            return
         
         # if the next agent does not exist look for a new next_agent
         other_vehicles = self.model.agents.select(agent_type=VehicleAgent)
