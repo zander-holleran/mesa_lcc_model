@@ -74,7 +74,7 @@ def plot_driving_actions(df, speed_change_col="speed_change", action_col="drivin
     """
 
     # Prepare the figure with two subplots side-by-side
-    fig, axs = plt.subplots(1, 2, figsize=(20, 5), sharex=True)
+    fig, axs = plt.subplots(1, 2, figsize=(20, 4), sharex=True)
 
     # Bar plot: distribution of driving actions
     action_counts = df[action_col].value_counts(normalize=True).reset_index()
@@ -129,7 +129,7 @@ def plot_travel_time_hist(finished_agents): # used in make_finished_agents_df
     plt.show()
 
     
-def finished_agents_summary_df(model):
+def finished_agents_summary_df(model, plots=True):
     '''
     Takes - model.finished_agents - a list of dicts that represent the agent data at the final step
     Returns - DataFrame - properly formatted finished_agents
@@ -149,17 +149,20 @@ def finished_agents_summary_df(model):
 
     print(f'N cars: {len(finished_agents)}, fake hours: {round(model.steps/3600,1)}')
     # Make the nice histogram
-    plot_travel_time_hist(finished_agents)
+    if plots:
+        plot_travel_time_hist(finished_agents)
     
     return finished_agents
 
-def vehicle_agent_data_time_series(model):
-    if model.batchrun ==True:
+def vehicle_agent_data_time_series(model, plots=True):
+    if model.batchrun == True:
         return None
         
     agent_data = model.datacollector.get_agent_vars_dataframe().reset_index()
     vehicles_full = agent_data.loc[agent_data.AgentType.isin(['CarAgent', 'BusAgent'])].copy()
-    
+    vehicles_full['implicit_sl_delta'] = vehicles_full.speed - vehicles_full.implicit_speed_limit
+    vehicles_full['posted_sl_delta'] = vehicles_full.speed - vehicles_full.posted_speed_limit
+
     # produce some lists of ids i might want to look at
     bus_ids = list(vehicles_full.loc[vehicles_full.AgentType == 'BusAgent'].AgentID.unique())
     slowest_ids = list(vehicles_full.groupby(by='AgentID', as_index=False).max('steps_taken').sort_values('steps_taken', ascending=False).AgentID[:5])
@@ -168,7 +171,8 @@ def vehicle_agent_data_time_series(model):
     Slow IDs: {slowest_ids}''')
 
     # display the driving actions graphs
-    plot_driving_actions(vehicles_full)
+    if plots:
+        plot_driving_actions(vehicles_full)
 
     return vehicles_full
 
@@ -303,3 +307,37 @@ def plot_section_trends(model_ts, col, window):
 
     fig.update_layout(hovermode="x unified")
     fig.show()
+
+from matplotlib.ticker import MaxNLocator
+
+def plot_speed_delta(vehicles_full, model_ts):
+    fig, ax1 = plt.subplots(figsize=(8, 4))
+    
+    # Plot primary data
+    sns.lineplot(data=vehicles_full, x='Step', y='implicit_sl_delta', ax=ax1)
+    ax1.set_ylabel("Speed Δ (mph)", fontsize=12)
+    ax1.set_ylim(-40, 5)
+    num_ticks = len(ax1.get_yticks())
+
+    # Create secondary axis
+    ax2 = ax1.twinx()
+    
+    # Scale agent count to be visually smaller (still real values)
+    sns.lineplot(x=model_ts['Step'], y=model_ts['volume'], ax=ax2, color='red',)
+    # Fill the area under the line
+    ax2.fill_between(model_ts['Step'], model_ts['volume'], color='red', alpha=0.3)
+    # Set y-limits to make it visually compressed to, e.g., the bottom 20% of ax1
+    new_ymax = model_ts['volume'].max()*3
+    ax2.set_ylim(0, new_ymax)
+    ax2.yaxis.set_major_locator(MaxNLocator(nbins=num_ticks -1 ))
+
+    # Cleanup
+    ax2.set_ylabel("Vehicle Volume", fontsize=10, rotation=270, labelpad=15)
+    ax2.yaxis.tick_right()
+
+    ax2.yaxis.set_label_position("right")
+    
+    plt.title("Implicit Speed Δ vs. Vehicle Volume")
+    ax1.grid()
+    plt.tight_layout()
+    plt.show()
