@@ -89,7 +89,6 @@ def report_avg_speed_by_section(model):
 agent_reporters={
     "AgentType": lambda a: a.__class__.__name__ ,
     #'status': lambda a: a.status if isinstance(a, VehicleAgent) else None,
-
     'distance_traveled': lambda a: a.distance_traveled if hasattr(a, 'distance_traveled') else None,
     'driving_action': lambda a: a.driving_action if isinstance(a, VehicleAgent) else None,
     'speed_change': lambda a: uc.get_mph(a.speed_change) if isinstance(a, VehicleAgent) else None,
@@ -108,7 +107,8 @@ agent_reporters={
 
 model_reporters = {
     "FinishedAgentsSummary": lambda m: None,  # required for finished agents to work
-    'step':lambda m: m.steps,
+    'Step':lambda m: m.steps,
+    "volume": lambda m: len(m.agents) - len(m.road_segments), 
     "avg_time_to_top": get_average_time_to_top,
     "avg_car_interactions": get_average_car_interactions,
     "avg_posted_sl_delta":get_average_speed_relative_to_posted_sl,
