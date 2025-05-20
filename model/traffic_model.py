@@ -36,11 +36,12 @@ class TrafficModel(Model):
         self.max_steps = max_steps
         self.batchrun = batchrun
         self.collect_every_n = collect_every_n
-        self.start_point = road_gdf.iloc[0].geometry.coords[0]  # this is used one time in generate.py, could remove
-    
+        self.initial_start_point = road_gdf.iloc[0].geometry.coords[0] # this one will go unchanged through out the model run 
+        self.start_point = road_gdf.iloc[0].geometry.coords[0] # this one might change depending on if too_close is triggered
+        
         # car centric perams
         self.sec_after_five = round((start_hr-5)*3600)
-        self.traffic_percentile = 90
+        self.traffic_percentile = traffic_percentile
         self.p_generate = p_generate  # Probability of new car each step
         self.max_persons = max_persons  # Maximum number of persons allowed
         
@@ -64,9 +65,9 @@ class TrafficModel(Model):
         self.finished_agents = []
         
         # Set up ContinuousSpace
-        buffer = 100
+        buffer = 1000
         minx, miny, maxx, maxy = road_gdf.total_bounds
-        self.space = ContinuousSpace(x_min=minx - buffer, x_max=maxx + buffer, y_min=miny - buffer, y_max=maxy + 100, torus=False)
+        self.space = ContinuousSpace(x_min=minx - buffer, x_max=maxx + buffer, y_min=miny - buffer, y_max=maxy + buffer, torus=False)
 
         # Create road segment agents - this just creates them in a loop setting the position via the gdf point
         self.road_segments = RoadSegmentAgent.create_agents( 

@@ -2,6 +2,14 @@ from agents.vehicle_agent import VehicleAgent
 from agents.bus_agent     import BusAgent
 from agents.car_agent     import CarAgent
 
+
+def too_close(model): 
+    vehicles = model.agents.select(agent_type=VehicleAgent)
+    closeness_threshold = 1 
+    if vehicles and model.space.get_distance(vehicles[-1].pos, model.start_point) < closeness_threshold: # check if the last vehicle is withen x m of the start point
+        model.start_point = (model.start_point[0], model.start_point[1]+1) # if the car is too close move the start point north
+        model.too_close_counter += 1
+
 # my generate functions
 def generate_new_bus(model):
         """
@@ -23,6 +31,7 @@ def generate_new_bus(model):
         if current_step < model.bus_first_departure:
             return  # Still waiting for the randomized first departure dont send a bus 
         elif (current_step - model.bus_first_departure) % steps_per_interval == 0:  # this triggers after first departure and only on the bus interval step
+            too_close(model)
             new_bus = BusAgent.create_agents(model=model, n=1, road_points_gdf=model.road_points_gdf)
             model.agents.add(*new_bus)
             model.bus_counter += 1
@@ -30,17 +39,11 @@ def generate_new_bus(model):
             model.bus_riders += model.at_bus_stop 
             model.at_bus_stop = 0 
 
-
 def generate_person(model):
         if model.person_counter >= model.max_persons: # dont generate people if you hit the limit
-            return 
-    
-        vehicles = model.agents.select(agent_type=VehicleAgent)
-        if vehicles and model.space.get_distance(vehicles[-1].pos, model.start_point) < 1: # check if there exists other vehicles and the last one is withen a meter of the start
-            model.too_close_counter += 1 
-            return # the last vehicle is too close pass on generation for now
-    
+            return             
         if model.random.random() < model.p_generate:
+            too_close(model)
             # congrats you made a person
             # now determine if that person goes to the bus stop or in a car
             if (model.random.random() < model.car_preference) or (model.at_bus_stop >= model.bus_capacity):

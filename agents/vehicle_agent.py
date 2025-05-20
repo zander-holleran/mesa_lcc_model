@@ -56,11 +56,11 @@ def build_empirical_accel_function(pctile, mean_shift=-.2 , var_streach=1.3):
     return accel
 
 
-def vert_decel(slope_deg):
-    # not used yet
-    slope_rad = np.radians(slope_deg)
-    vert_decel = 9.81* np.sin(slope_rad)
-    return vert_decel
+# def vert_decel(slope_deg):
+#     # not used yet
+#     slope_rad = np.radians(slope_deg)
+#     vert_decel = 9.81* np.sin(slope_rad)
+#     # return vert_decel
 
 
 
@@ -71,16 +71,23 @@ def vert_decel(slope_deg):
 class VehicleAgent(Agent):
     def __init__(self, model):
         super().__init__(model)
+        # place the agent
+        self.model.space.place_agent(self, model.start_point)  # <-- here is the intial place agent
+         # init all the road segement data 
+        self.road_segments = self.model.agents.select(agent_type=RoadSegmentAgent)
 
+        # Establish the Vehicles position
+        self.path = self.road_segments.get('position')
+        self.path_index = 0 
         self.status = "driving"
-        self.speed = uc.get_mps(50) # starting speed: 52.55 was the mean of first step implicit_sl for 300 vehicles
+        self.speed = self.road_segments[0].speed_limit # starting speed: 52.55 was the mean of first step implicit_sl for 300 vehicles
         self.break_cooldown = 0
         
         # For data collection 
         self.speed_change = 0
         self.created_at_step = self.model.steps 
         self.steps_taken = 0 
-        self.distance_traveled = 0
+        self.distance_traveled = -model.space.get_distance(model.initial_start_point, model.start_point) 
         self.car_interactions = 0
         self.gap = 0 
         self.next_agent = None
@@ -95,14 +102,8 @@ class VehicleAgent(Agent):
         self.performance = .5
         self.accel_curve = build_empirical_accel_function(self.performance)
 
-        # init all the road segement data 
-        self.road_segments = self.model.agents.select(agent_type=RoadSegmentAgent)
+       
 
-        # Establish the Vehicles position 
-        self.path = self.road_segments.get('position')
-        self.path_index = 0
-
-        self.model.space.place_agent(self, self.path[0])  # <-- here is the intial place agent
 
         
     def end_of_road(self):
@@ -159,7 +160,7 @@ class VehicleAgent(Agent):
 
             Used in the adjust_speed function
             """
-            ideal_gap = max(self.speed * self.ideal_distance_multiplier,2)
+            ideal_gap = max(self.speed * self.ideal_distance_multiplier,5)
             
             # run the get_new_next_agent function 
             self.get_next_agent()
@@ -191,7 +192,7 @@ class VehicleAgent(Agent):
 
         # gather the data from the road segments
         # 1. Get the 5 agents
-        next_road_agents = list(self.road_segments)[self.path_index:self.path_index+4]
+        next_road_agents = list(self.road_segments)[self.path_index:self.path_index+4]  # woah this is sus, how does this not retun index_out of range
         posted_limit = [agent.speed_limit for agent in next_road_agents]
         self.posted_speed_limit=posted_limit[0]
         curvatures = [agent.curvature for agent in next_road_agents]
