@@ -18,6 +18,7 @@ from utils import unit_conversion_utils as uc  # for get_mph, etc.
 # import other parts of model
 import model.reporting as rep
 import model.generate as gen 
+import model.init_helpers as ih 
 
 
 #from model.reporting import agent_reporters, model_reporters
@@ -28,6 +29,7 @@ class TrafficModel(Model):
 
     def __init__(self, road_gdf, ecs_df, max_steps=50000, seed=123, batchrun=False, collect_every_n=1, 
                  start_hr=7, traffic_percentile=None, p_generate=None, max_persons=50,
+                 canyon_open_hr=None, 
                  bus_interval=30, car_preference=1, bus_capacity=30):
         super().__init__(seed=seed)
         #model perams
@@ -38,12 +40,19 @@ class TrafficModel(Model):
         self.collect_every_n = collect_every_n
         self.initial_start_point = road_gdf.iloc[0].geometry.coords[0] # this one will go unchanged through out the model run 
         self.start_point = road_gdf.iloc[0].geometry.coords[0] # this one might change depending on if too_close is triggered
+
         
         # car centric perams
-        self.sec_after_five = round((start_hr-5)*3600)
+        self.start_step = uc.sec_after_five(start_hr)
         self.traffic_percentile = traffic_percentile
         self.p_generate = p_generate  # Probability of new car each step
         self.max_persons = max_persons  # Maximum number of persons allowed
+
+        
+        # canyon open peram
+        self.canyon_open_step = uc.sec_after_five(canyon_open_hr) - uc.sec_after_five(start_hr)
+        print(self.canyon_open_step)
+        self.canyon_closed_section = [2] 
         
         # bus centric perams
         self.bus_interval = bus_interval
@@ -69,19 +78,19 @@ class TrafficModel(Model):
         minx, miny, maxx, maxy = road_gdf.total_bounds
         self.space = ContinuousSpace(x_min=minx - buffer, x_max=maxx + buffer, y_min=miny - buffer, y_max=maxy + buffer, torus=False)
 
-        # Create road segment agents - this just creates them in a loop setting the position via the gdf point
-        self.road_segments = RoadSegmentAgent.create_agents( 
-            model=self, 
-            n=len(self.road_points_gdf), 
-            position=[(point.x, point.y) for point in self.road_points_gdf.geometry], # need to be passed as a list
-            speed_limit=[speed_limit for speed_limit in self.road_points_gdf.speed_limit],
-            road_section = [road_section for road_section in self.road_points_gdf.road_section],
-            curvature = [curvature for curvature in self.road_points_gdf.curvature],
-            linked_coord=[linked_coord for linked_coord in self.road_points_gdf.linked_coord]
+        # set up road segments with a helper
+        self.road_segments = ih.init_road_segments(
+            model=self,
+            road_gdf=self.road_points_gdf,
+            canyon_open_step=self.canyon_open_step,
+            closed_sections=set(self.canyon_closed_section)
         )
-        # place all the road segments in space - goes hand in hand with read point creation 
-        for agent, point in zip(self.road_segments, self.road_points_gdf.geometry):self.space.place_agent(agent, (point.x, point.y))
-        
+
+        # place the roadsegments on the space
+        for agent, point in zip(self.road_segments, road_gdf.geometry):
+            self.space.place_agent(agent, (point.x, point.y))
+
+        # set up the reporters
         if self.batchrun: 
             self.datacollector = DataCollector(model_reporters = rep.model_reporters)
         else:
@@ -92,15 +101,26 @@ class TrafficModel(Model):
         if not self.batchrun:
             self.datacollector.model_vars["FinishedAgentsSummary"][-1] = self.finished_agents
         self.running = False
+
+    def maybe_reopen_canyon(self):
+        if self.canyon_open_step is not None and self.steps == self.canyon_open_step:
+            print(f'canyon open at {self.steps}')
+            for agent in self.road_segments:
+                if agent.road_section in self.canyon_closed_section:
+                    agent.road_closed = False
         
     def step(self):
         #clear vehicles here from the roads - necessary for road segment analysis
         for segment in self.road_segments:
             segment.vehicles_here.clear()
 
+        # establish what p_generate is going to be for that step
         if self.traffic_percentile:
-            self.p_generate = self.expected_counts_seconds.iloc[self.sec_after_five, self.traffic_percentile]
-            self.sec_after_five += 1
+            self.p_generate = self.expected_counts_seconds.iloc[self.start_step, self.traffic_percentile]
+            self.start_step += 1
+
+        # maybe reopen the canyon 
+        self.maybe_reopen_canyon()
         
         # generate functions
         gen.generate_person(self)

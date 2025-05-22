@@ -174,6 +174,7 @@ class VehicleAgent(Agent):
             return ideal_gap, gap
         
     def get_speed_limit(self):
+        '''maybe unappresiated but because this function looks at next_road_agents(n=5) and takes an average the sl is is a composet of the many sl's '''
         def curve_adjust(max_affect_pct=0.5, curvature=45, speed=60):
             '''
             max_affect_pct - float: max possible speed reduction proportion at extreme curve
@@ -190,22 +191,36 @@ class VehicleAgent(Agent):
                 speed_effect = np.clip(speed_effect, 0, 1)  # protect against overspeed
             return speed * (1 - (max_affect_pct * curve_effect * speed_effect))
 
+        def weighted_avg_of_list(list_of_items):
+            weights = np.array([1 / (1 + i) for i in range(len(list_of_items))])
+            return np.average(list_of_items, weights=weights)
+
+
         # gather the data from the road segments
         # 1. Get the 5 agents
         next_road_agents = list(self.road_segments)[self.path_index:self.path_index+4]  # woah this is sus, how does this not retun index_out of range
+           
+        # recover the speed_limit and curvature and closures for the next few road agents 
+        closures = [agent.road_closed for agent in next_road_agents]
         posted_limit = [agent.speed_limit for agent in next_road_agents]
-        self.posted_speed_limit=posted_limit[0]
         curvatures = [agent.curvature for agent in next_road_agents]
         
         # weighted averages
-        weights = np.array([1 / (1 + i) for i in range(len(posted_limit))])
-        average_posted_limit = np.average(posted_limit, weights=weights)
-        average_curvature = np.average(curvatures, weights=weights)
+        average_posted_limit = weighted_avg_of_list(posted_limit)
+        average_curvature = weighted_avg_of_list(curvatures)
 
         # enter the info in to the curve adjust function 
         curve_speed_limit_mph = curve_adjust(self.curve_responce, average_curvature, average_posted_limit)
         implicit_speed_limit_mph = curve_speed_limit_mph + self.acceptable_over
+        
+        # road closure adjustments 
+        if any(closures):
+            posted_limit = [agent.speed_limit if not agent.road_closed else 0 for agent in next_road_agents]
+            implicit_speed_limit_mph = weighted_avg_of_list(posted_limit)
+
+        self.posted_speed_limit=posted_limit[0] # this represents the posted sl of the road segment where the agent currently is
         self.implicit_speed_limit = implicit_speed_limit_mph
+            
         return  uc.get_mps(implicit_speed_limit_mph)
 
     def less_smooth_brake(self, gap, ideal_gap):
@@ -223,7 +238,6 @@ class VehicleAgent(Agent):
         # Add some human-like noise
         noise = np.random.normal(0, .1)
         break_pct =  np.clip(base + noise, 0, 1)
-
 
         deceleration = break_pct * 8 # <- this is acting as max decel in mps 
         return deceleration
