@@ -4,9 +4,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import plotly.express as px
 
-
 from utils.unit_conversion_utils import get_mps, meters_to_feet  
-
 
 # -~-~-~-~-~-~-~-~-~-~-~-~ general analysis - should be able to be used independent of main -~-~-~-~-~-~-~-~-~-~-~-~
 def plot_param_grid_heatmap(var1_vals, var2_vals, func, param1_name, param2_name, fixed_params=None, round_to=2):
@@ -127,7 +125,6 @@ def plot_travel_time_hist(finished_agents): # used in make_finished_agents_df
     
     plt.tight_layout()
     plt.show()
-
     
 def finished_agents_summary_df(model, plots=True):
     '''
@@ -314,7 +311,8 @@ def plot_speed_delta(vehicles_full, model_ts):
     fig, ax1 = plt.subplots(figsize=(8, 4))
     
     # Plot primary data
-    sns.lineplot(data=vehicles_full, x='Step', y='implicit_sl_delta', ax=ax1)
+    sl_delta_data = vehicles_full.loc[vehicles_full.status == 'driving']
+    sns.lineplot(data=sl_delta_data, x='Step', y='implicit_sl_delta', ax=ax1)
     ax1.set_ylabel("Speed Δ (mph)", fontsize=12)
     ax1.set_ylim(-40, 5)
     num_ticks = len(ax1.get_yticks())

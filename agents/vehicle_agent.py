@@ -90,6 +90,7 @@ class VehicleAgent(Agent):
         self.distance_traveled = -model.space.get_distance(model.initial_start_point, model.start_point) 
         self.car_interactions = 0
         self.gap = 0 
+        self.ideal_gap=None
         self.next_agent = None
         self.driving_action = None
         self.posted_speed_limit = None
@@ -134,8 +135,8 @@ class VehicleAgent(Agent):
         Used in the get_gap function
         Takes self, checks if a next_agent exists and status == driving, if so uses that, if not trys to find a new next agent. 
         '''
-        # check if 1) next car is already saved & 2)it is driving. This works because self.next_agent existing is tested first
-        if self.next_agent and self.next_agent.status == "driving":
+        # check if 1) next car is already saved & 2)it is driving. The secound check is to deal with when cars get removed at the end. This works because self.next_agent existing is tested first
+        if self.next_agent and self.next_agent.status in ["driving", "canyon_closed"]:
             return
         
         # if the next agent does not exist look for a new next_agent
@@ -150,31 +151,35 @@ class VehicleAgent(Agent):
             self.next_agent = min(cars_ahead, key=lambda agent: agent.distance_traveled)
         else:
             self.next_agent = None
-            
+
         
     def get_gap(self):
             """
             Returns:
-                ideal_gap: float — the desired following distance (deg)
-                gap: float — distance to the closest vehicle ahead (deg)
+                ideal_gap: float — the desired following distance (m)
+                gap: float — distance to the closest vehicle ahead (m)
 
             Used in the adjust_speed function
             """
             ideal_gap = max(self.speed * self.ideal_distance_multiplier,5)
-            
-            # run the get_new_next_agent function 
-            self.get_next_agent()
-            
             # if a agent exists then measure the gap
             if self.next_agent: 
                 gap = self.model.space.get_distance(self.pos, self.next_agent.pos)
             else:
                 gap = np.nan
+            self.ideal_gap = ideal_gap
             self.gap = gap
+            
             return ideal_gap, gap
         
     def get_speed_limit(self):
-        '''maybe unappresiated but because this function looks at next_road_agents(n=5) and takes an average the sl is is a composet of the many sl's '''
+        ''' Description: Gathers data from road agents. Selects N road agents and takes a weighted average of the posted_limit and the curvatures. Combines these into curve_speed_limit_mph. Adds  
+            self.acceptiable_over to create self.implicit_speed_limit_mph. It should be obvious but this is in MPH, this is the var used in the analysis functions. Where as
+            uc.get_mps(implicit_speed_limit_mph) is returned by the function and is used by adjust speed
+            maybe unappresiated but because this function looks at next_road_agents(n=5) then takes a weighted average of speed limits. 
+            The weights are assigned as following [1/(1+1), 1/(1+2), 1/(1+3)... ] ie [.5, .33, .25, ... ]  
+            '''
+        
         def curve_adjust(max_affect_pct=0.5, curvature=45, speed=60):
             '''
             max_affect_pct - float: max possible speed reduction proportion at extreme curve
@@ -195,7 +200,6 @@ class VehicleAgent(Agent):
             weights = np.array([1 / (1 + i) for i in range(len(list_of_items))])
             return np.average(list_of_items, weights=weights)
 
-
         # gather the data from the road segments
         # 1. Get the 5 agents
         next_road_agents = list(self.road_segments)[self.path_index:self.path_index+4]  # woah this is sus, how does this not retun index_out of range
@@ -204,31 +208,32 @@ class VehicleAgent(Agent):
         closures = [agent.road_closed for agent in next_road_agents]
         posted_limit = [agent.speed_limit for agent in next_road_agents]
         curvatures = [agent.curvature for agent in next_road_agents]
-        
-        # weighted averages
-        average_posted_limit = weighted_avg_of_list(posted_limit)
-        average_curvature = weighted_avg_of_list(curvatures)
 
-        # enter the info in to the curve adjust function 
-        curve_speed_limit_mph = curve_adjust(self.curve_responce, average_curvature, average_posted_limit)
-        implicit_speed_limit_mph = curve_speed_limit_mph + self.acceptable_over
-        
         # road closure adjustments 
         if any(closures):
-            posted_limit = [agent.speed_limit if not agent.road_closed else 0 for agent in next_road_agents]
+            posted_limit = [agent.speed_limit if not agent.road_closed else 0 for agent in next_road_agents] # this implicitly requires 5 segments in a row to be closed for the car to stop 
             implicit_speed_limit_mph = weighted_avg_of_list(posted_limit)
+            self.status = 'canyon_closed'
+        else:  
+            # weighted averages
+            average_posted_limit = weighted_avg_of_list(posted_limit)
+            average_curvature = weighted_avg_of_list(curvatures)
+    
+            # enter the info in to the curve adjust function 
+            curve_speed_limit_mph = curve_adjust(self.curve_responce, average_curvature, average_posted_limit)
+            implicit_speed_limit_mph = curve_speed_limit_mph + self.acceptable_over
+            self.status = 'driving'
 
+        # save the speed limits
         self.posted_speed_limit=posted_limit[0] # this represents the posted sl of the road segment where the agent currently is
         self.implicit_speed_limit = implicit_speed_limit_mph
-            
-        return  uc.get_mps(implicit_speed_limit_mph)
+        return  uc.get_mps(implicit_speed_limit_mph)  
 
     def less_smooth_brake(self, gap, ideal_gap):
         """
         Simulate more realistic, human-like braking behavior.
         Returns a value between 0 and 1 indicating brake intensity.
         """
-
         if ideal_gap <= 0 or np.isnan(ideal_gap):
             return 0
         force = max((ideal_gap - gap) / ideal_gap, 0)
@@ -246,7 +251,6 @@ class VehicleAgent(Agent):
         '''
         used when the car is going over the speed limit, essentially the more your going over the sl the more you apply breaks
         '''
-
         if speed < speed_limit:
             # this should never be triggered but i added anyway to make sure it didnt trip an error
             return 0
@@ -258,13 +262,37 @@ class VehicleAgent(Agent):
             return .5
         elif mph_over > 0:
             return .2
-        # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~- The initial adjust speed ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-
+   
+    def adjust_status(self):
+        '''
+        Description: if i understand the order correctly, in a large backup situation self.status can be set to 'driving' by the get_speed_limit function 
+        then overwritten to 'canyon_closed' in the same step by the adjust status. And because data is recorded at the end of the step the latter status will be recorded as the "True" status
+        '''
+        if not self.next_agent: # if no next agent just skip
+            return 
             
+        if self.status == self.next_agent.status: # if you have the same status as those in front of you dont adjust
+            return
+            
+        if self.gap <= self.ideal_gap and self.next_agent.status == 'canyon_closed': 
+            self.status = 'canyon_closed'
+            return
+
+        if self.next_agent.status == 'driving' and self.status =='canyon_closed': # this will only trigger i
+            self.status = 'driving' 
+            return 
+            
+
+        # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~- The initial adjust speed ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-
     def adjust_speed(self):
         ''' takes self from self uses'''
+        
+        # run the data gathering functions
+        self.get_next_agent()
         ideal_gap, gap  = self.get_gap() 
         implicit_speed_limit = self.get_speed_limit()
-
+        self.adjust_status()
+        
         # save the current speed 
         old_speed = self.speed 
         

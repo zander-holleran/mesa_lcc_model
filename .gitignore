@@ -11,3 +11,4 @@ venv/
 
 # ignore data
 data/
+.DS_Store

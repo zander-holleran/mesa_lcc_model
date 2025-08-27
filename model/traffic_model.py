@@ -28,8 +28,8 @@ class TrafficModel(Model):
     """Mesa model simulating traffic on the canyon road with a car cap."""
 
     def __init__(self, road_gdf, ecs_df, max_steps=50000, seed=123, batchrun=False, collect_every_n=1, 
-                 start_hr=7, traffic_percentile=None, p_generate=None, max_persons=50,
-                 canyon_open_hr=None, 
+                 start_hr=5, traffic_percentile=None, p_generate=None, max_persons=50,
+                 canyon_open_hr=5, 
                  bus_interval=30, car_preference=1, bus_capacity=30):
         super().__init__(seed=seed)
         #model perams
@@ -50,8 +50,7 @@ class TrafficModel(Model):
 
         
         # canyon open peram
-        self.canyon_open_step = uc.sec_after_five(canyon_open_hr) - uc.sec_after_five(start_hr)
-        print(self.canyon_open_step)
+        self.canyon_open_step = max(uc.sec_after_five(canyon_open_hr) - uc.sec_after_five(start_hr), 1 ) # make sure the canyon is at least opened on step 0 
         self.canyon_closed_section = [2] 
         
         # bus centric perams
@@ -95,20 +94,39 @@ class TrafficModel(Model):
             self.datacollector = DataCollector(model_reporters = rep.model_reporters)
         else:
             self.datacollector = DataCollector(model_reporters = rep.model_reporters, agent_reporters = rep.agent_reporters)
-   
+
+    # -~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~ END OF INIT -~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
     def model_stop_process(self):
         # add agent summary data to the datacollector
         if not self.batchrun:
             self.datacollector.model_vars["FinishedAgentsSummary"][-1] = self.finished_agents
         self.running = False
+    
+    def max_persons_check(self):
+    # Stop model when all generated Vehiclea have been removed
+        if self.person_counter == self.max_persons:
+            remaining_vehicles = self.agents.select(agent_type=VehicleAgent)
+            if len(remaining_vehicles) == 0:
+                print(f"{self.person_counter} people generated stopping model.")
+                self.model_stop_process()
+    
+    def max_steps_check(self):
+        # Stop model at hard cap of steps
+        if self.steps >= self.max_steps:
+            print(f"Reached max step count ({self.max_steps}). Stopping model.")
+            self.model_stop_process()
 
     def maybe_reopen_canyon(self):
-        if self.canyon_open_step is not None and self.steps == self.canyon_open_step:
-            print(f'canyon open at {self.steps}')
+        #if self.canyon_open_step is not None and self.steps == self.canyon_open_step:
+        if self.steps == self.canyon_open_step:
+            #print(f'canyon open at {self.steps}')
             for agent in self.road_segments:
                 if agent.road_section in self.canyon_closed_section:
                     agent.road_closed = False
-        
+    
+     
+
+    # -~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~ THE STEP  -~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
     def step(self):
         #clear vehicles here from the roads - necessary for road segment analysis
         for segment in self.road_segments:
@@ -134,25 +152,19 @@ class TrafficModel(Model):
         if (self.steps % self.collect_every_n) == 0:
             self.datacollector.collect(self)
 
-        # Stop model when all generated Vehiclea have been removed
-        if self.person_counter == self.max_persons:
-            remaining_vehicles = self.agents.select(agent_type=VehicleAgent)
-            if len(remaining_vehicles) == 0:
-                print(f"{self.person_counter} people generated stopping model.")
-                self.model_stop_process()
-        
-        # Stop model at hard cap of steps
-        if self.steps >= self.max_steps:
-            print(f"Reached max step count ({self.max_steps}). Stopping model.")
-            self.model_stop_process()
+        # potentially end the model
+        self.max_steps_check()
+        self.max_persons_check()
 
-    
     def run_model(self):
         for _ in tqdm(range(self.max_steps), desc="Simulating", unit="step"):
             if not self.running:
                 break
         #while self.running:
             self.step()
+    
+    
+   
 
 
 

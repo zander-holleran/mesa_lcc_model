@@ -146,7 +146,6 @@ def animate_relative_distance(vehicle_df, agent_id, distance_behind):
     # Filter to within distance_behind
     vehicle_df = vehicle_df[vehicle_df["distance_behind_ref"] <= distance_behind]
 
-    print()
     driving_action_colors = {
         "coast": "gray",
         'jitter':'purple',
@@ -198,6 +197,8 @@ def animate_relative_distance(vehicle_df, agent_id, distance_behind):
         scat.set_offsets(coords)
         colors = step_df["driving_action"].map(driving_action_colors).fillna("black")
         scat.set_color(colors)
+
+        #print(vehicle_df.head())
 
         # Add text labels
         for _, row in step_df.iterrows():
