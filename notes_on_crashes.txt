@@ -1,0 +1,54 @@
+Strat one
+1)coin flip
+    A) crach does not occure
+    B) Crash occures
+
+2) if 1B:
+    A) Does not block road
+    B) Blocks Road
+        Some time goes by and then the vehicle is cleared to the side
+
+
+Driving
+    Normal
+
+Crashed not blocking road (CNB - Crashed No Block)
+    Causes the cars passing it to slow down
+    Two things might need to occure
+    1) the speed limit of the road segments not need to be temoprarily modified to affect all other cars
+        do this on a timer so eventially it goes back to normal. Maybe start with a fixed affect and can eventually make it verialbe. Potentially uniform between 5-60 mins?? 
+    2) car is removed from the track, when it comes to the reporting on them essentially exclude all people who had a crash.
+
+Crashed blocking road (CB - Crashed Blocking )
+    Causes cars behind it to stop
+    1) slow the speed of the car to 0 do not move the car, set status of crashed car to crashed. The rest of the cars should stop behind it. You can set the status of the interacting cars to slowed_by_crash
+
+
+Paths: 
+Driving -> Driving
+No adverse affect on other cars, no funny buisness for reporting 
+
+
+Driving -> CNB -> Driving
+
+Driving -> CB -> CNB -> Driving
+
+
+The coin flip should occure at the model level so It dosent happend for every car. It shoud essentially be risk x n cars, this seems simple enough.
+what if: 
+    i want veriable crash risk (seems unnecessairy)
+    weather dependent ( this would essentially shift up or down the entire level of risk)
+
+Fixed bounds?? 
+    Pros - dont get crazy results. Can gaurentee a crash occures at some point, 
+    Cons - kinda unrealistic, might get no crash or a bunch of crashes accidentaily. Going to be hard to test
+
+What about the recording of the insidents. 
+I should prob ignore the crashed car its self. 
+maybe status of others could be interprated from the road segment
+
+
+Implomentation notes:
+Model peram crash prob is a peram passed to the model. Maybe I have to devide it withen the model so as to pass sensiable numbers.
+Or maybe i pass an arbatrary number and have id be modified by the program. 
+    
