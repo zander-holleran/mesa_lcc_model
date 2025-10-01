@@ -1,6 +1,8 @@
 from agents.vehicle_agent import VehicleAgent
 from agents.bus_agent     import BusAgent
 from agents.car_agent     import CarAgent
+from agents.blocker_agent import BlockerAgent
+from agents.road_segment_agent import RoadSegmentAgent
 
 
 def too_close(model): 
@@ -57,4 +59,18 @@ def generate_person(model):
                 model.at_bus_stop+=1 
 
 
-                        
+def generate_blocker(model, blocker_type, self_distruct_timer, road_segment):
+        new_blocker = BlockerAgent.create_agents(model=model, n=1, blocker_type=blocker_type, self_distruct_timer=self_distruct_timer, road_segment=road_segment)
+        model.agents.add(*new_blocker)
+
+def generate_crash(model):                        
+    if model.crashes > 0:
+        # Step 1: filter to road segments that have a non-empty `vehicles_here`
+        occupied_segments = model.agents.select(lambda s: bool(getattr(s, "vehicles_here", ())), agent_type=RoadSegmentAgent)
+        # Step 2: pick one at random (or None if none exist)
+        segment = model.random.choice(list(occupied_segments)) if len(occupied_segments) else None
+        
+        if segment:
+            print(f"Crash at step {model.steps} on segment {segment.position}")
+            generate_blocker(model=model, blocker_type="crash", self_distruct_timer=model.random.randint(60, 300), road_segment=segment)
+

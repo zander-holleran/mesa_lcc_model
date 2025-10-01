@@ -16,5 +16,6 @@ def init_road_segments(model, road_gdf, canyon_open_step=None, closed_sections=N
         road_section=road_gdf.road_section.tolist(),
         curvature=road_gdf.curvature.tolist(),
         road_closed = road_closed,
-        linked_coord=road_gdf.linked_coord.tolist()
+        linked_coord=road_gdf.linked_coord.tolist(),
+        distance_traveled=road_gdf.distance_traveled.tolist()
     )

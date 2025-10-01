@@ -11,6 +11,7 @@ from agents.vehicle_agent import VehicleAgent
 from agents.bus_agent import BusAgent
 from agents.car_agent import CarAgent
 from agents.road_segment_agent import RoadSegmentAgent
+from agents.blocker_agent import BlockerAgent
 
 # import my utils
 from utils import unit_conversion_utils as uc  # for get_mph, etc.
@@ -77,7 +78,6 @@ class TrafficModel(Model):
         self.bus_riders = 0 
         self.at_bus_stop = 0 
         self.finished_agents = []
-        self.active_vehicles = [] # thus will be used for the crash model
         
         # Set up ContinuousSpace
         buffer = 1000
@@ -165,15 +165,18 @@ class TrafficModel(Model):
         frac = total - base
         crashes = base + (1 if rng.random() < frac else 0)
         new_remainder = total - crashes  # keep only the fractional part
-
         return crashes, new_remainder
+    
+    
+
+    
 
     
     # -~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~ THE STEP  -~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
     def step(self):
-        #clear vehicles here from the roads - necessary for road segment analysis
-        for segment in self.road_segments:
-            segment.vehicles_here.clear()
+        #clear vehicles here from the roads - necessary for road segment analysis 
+        # for segment in self.road_segments:
+        #     segment.vehicles_here.clear()
 
         # establish what p_generate is going to be for that step
         if self.traffic_percentile:
@@ -186,13 +189,13 @@ class TrafficModel(Model):
 # +       print([i for i in self.active_vehicles])
 
         # maybe reopen the canyon 
-        self.maybe_reopen_canyon()
+        self.maybe_reopen_canyon() # this should be moved into the blocker agent
         
         # generate functions
         gen.generate_person(self)
         gen.generate_new_bus(self)
 
-        # crash function
+        # crash function - should simplified in the step function 
         self.crashes, self.remainder = self.should_crash_randomized_rounding(
             crashes_per_100k_vmt=self.crashes_per_100k_vmt,
             num_cars=len(self.active_vehicles),
@@ -202,17 +205,33 @@ class TrafficModel(Model):
         )
         self.total_crashes += self.crashes
         
-        if self.crashes > 0:
-            print(f"Step: {self.steps}, Crashes this step: {self.crashes}, Total Crashes: {self.total_crashes}")
-            # # randomly select a vehicle to crash
-            # vehicles_to_crash = self.random.sample(self.active_vehicles, min(1, len(self.active_vehicles)))
-            # for vehicle in vehicles_to_crash:
-            #     print (f"Crashing vehicle ID: {vehicle.unique_id}")
-            #     # place holdervehicle.crash() # call the crash method on the vehicle agent
+        # will generate a blocker if crashes > 0
+        gen.generate_crash(self)
+
+
+
+
+
+        # genrate a blocker that represents a crash, the elliagiable positions are the road segments where vehicles currently are + an index of 1
         
         # action functions
+
+        # look ahead and assign who/waht the next agent is
+        self.agents.do('get_next_agent') # this assigns attributes the next agent object with the previous vehicle. Need to modify so that blocker objects are also considered.
+
+
+        # -`-`-`-`-`-`-
+        # maybe the set status should go here??  
+        # then a filter to elliagiable vehicles to move
+        # -`-`-`-`-`-`-
+        
+        # Adjust speed accordingly 
         self.agents.do("adjust_speed")
+        # Move along path based on speed
         self.agents.do("move_along_path")
+        # Blockers tick down their self destruct timer
+        self.agents.select(lambda a: isinstance(a, BlockerAgent)).do("tick")
+
 
         # Collect data
         if (self.steps % self.collect_every_n) == 0:
