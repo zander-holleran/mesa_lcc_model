@@ -4,7 +4,7 @@ import numpy as np
 
 class CarAgent(VehicleAgent):
     """Represents a car moving in the canyon."""
-    def __init__(self, model, road_points_gdf):
+    def __init__(self, model):
         super().__init__(model)
         self.status = "driving"  # the initial status of the car
         

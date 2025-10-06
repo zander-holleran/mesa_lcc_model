@@ -339,3 +339,41 @@ def plot_speed_delta(vehicles_full, model_ts):
     ax1.grid()
     plt.tight_layout()
     plt.show()
+
+
+# -~-~-~-~-~-~-~-~-~-~-~-~ misc utils -~-~-~-~-~-~-~-~-~-~-~-~``
+def agents_to_df(model, RoadSegmentAgent):
+    # 1) collect the agents
+    try:
+        segs = list(model.agents.select(agent_type=RoadSegmentAgent))
+    except AttributeError:
+        # fallback if you're not using Mesa's AgentSet.select
+        segs = [a for a in model.agents if isinstance(a, RoadSegmentAgent)]
+
+    if not segs:
+        return pd.DataFrame()  # nothing to report
+
+    # 2) union of attribute names across agents (public only)
+    keys = sorted({
+        k for a in segs for k in vars(a).keys()
+        if not k.startswith("_")
+    } | {"unique_id"})  # ensure id is included if you use it
+
+    # 3) light coercion so the DF is printable/savable
+    def coerce(v):
+        # shapely geometry → WKT (if present)
+        if hasattr(v, "wkt"):
+            return v.wkt
+        # sets/tuples → lists
+        if isinstance(v, (set, tuple)):
+            return list(v)
+        return v
+
+    rows = []
+    for a in segs:
+        row = {}
+        for k in keys:
+            row[k] = coerce(getattr(a, k, None))
+        rows.append(row)
+
+    return pd.DataFrame(rows)

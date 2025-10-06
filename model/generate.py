@@ -34,7 +34,7 @@ def generate_new_bus(model):
             return  # Still waiting for the randomized first departure dont send a bus 
         elif (current_step - model.bus_first_departure) % steps_per_interval == 0:  # this triggers after first departure and only on the bus interval step
             too_close(model)
-            new_bus = BusAgent.create_agents(model=model, n=1, road_points_gdf=model.road_points_gdf)
+            new_bus = BusAgent.create_agents(model=model, n=1)
             model.agents.add(*new_bus)
             model.bus_counter += 1
             model.person_counter += model.at_bus_stop
@@ -49,7 +49,7 @@ def generate_person(model):
             # congrats you made a person
             # now determine if that person goes to the bus stop or in a car
             if (model.random.random() < model.car_preference) or (model.at_bus_stop >= model.bus_capacity):
-                new_car = CarAgent.create_agents(model=model, n=1, road_points_gdf=model.road_points_gdf)
+                new_car = CarAgent.create_agents(model=model, n=1)
                 model.agents.add(*new_car) 
                 # this person got in a car
                 model.person_counter += 1
@@ -60,17 +60,45 @@ def generate_person(model):
 
 
 def generate_blocker(model, blocker_type, self_distruct_timer, road_segment):
+        print(f"{blocker_type} at step {model.steps} on segment {road_segment.pos}")
         new_blocker = BlockerAgent.create_agents(model=model, n=1, blocker_type=blocker_type, self_distruct_timer=self_distruct_timer, road_segment=road_segment)
         model.agents.add(*new_blocker)
 
-def generate_crash(model):                        
-    if model.crashes > 0:
-        # Step 1: filter to road segments that have a non-empty `vehicles_here`
-        occupied_segments = model.agents.select(lambda s: bool(getattr(s, "vehicles_here", ())), agent_type=RoadSegmentAgent)
-        # Step 2: pick one at random (or None if none exist)
-        segment = model.random.choice(list(occupied_segments)) if len(occupied_segments) else None
+def generate_crash(model): 
+    if model.crashes == 0:
+        # no crashes to generate end the function
+        return                     
+
+    # Step 1: filter to road segments that have a non-empty `vehicles_here`
+    occupied_segments = model.agents.select(lambda s: bool(getattr(s, "vehicles_here", ())), agent_type=RoadSegmentAgent)
+    # Step 2: pick one at random (or None if none exist)
+    segment = model.random.choice(list(occupied_segments)) if len(occupied_segments) else None
+    
+    if segment:
+        generate_blocker(model=model, blocker_type="crash", self_distruct_timer=model.random.randint(60, 300), road_segment=segment) # this is where blocker duration is set, currently between 1 and 5 mins
+
+def generate_canyon_closure(model):
+    if len(model.canyon_closures) == 0:
+        return
+    
+    closure = model.canyon_closures.iloc[0]
+    if closure.closure_step == model.steps:
+        # Find the road segment agent with the matching unique_id
+        segment = next(
+            (agent for agent in model.agents.select(agent_type=RoadSegmentAgent)
+             if agent.unique_id == closure.road_section),
+            None
+        )
+
+        if segment is not None:
+            generate_blocker(
+                model=model,
+                blocker_type="canyon_closure",
+                self_distruct_timer=closure.duration,
+                road_segment=segment
+            )
+
+            if not model.canyon_closures.empty:
+                model.canyon_closures = model.canyon_closures.iloc[1:].reset_index(drop=True)
         
-        if segment:
-            print(f"Crash at step {model.steps} on segment {segment.position}")
-            generate_blocker(model=model, blocker_type="crash", self_distruct_timer=model.random.randint(60, 300), road_segment=segment)
 

@@ -56,14 +56,6 @@ def build_empirical_accel_function(pctile, mean_shift=-.2 , var_streach=1.3):
     return accel
 
 
-# def vert_decel(slope_deg):
-#     # not used yet
-#     slope_rad = np.radians(slope_deg)
-#     vert_decel = 9.81* np.sin(slope_rad)
-#     # return vert_decel
-
-
-
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~- The actual VehicleAgent Class ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
@@ -73,11 +65,12 @@ class VehicleAgent(Agent):
         super().__init__(model)
         # place the agent
         self.model.space.place_agent(self, model.start_point)  # <-- here is the intial place agent
-         # init all the road segement data 
+        
+        # init all the road segement data 
         self.road_segments = self.model.agents.select(agent_type=RoadSegmentAgent)
 
         # Establish the Vehicles position
-        self.path = self.road_segments.get('position')
+        self.path = self.road_segments.get('pos')
         self.path_index = 0 
         self.status = "driving"
         self.speed = self.road_segments[0].speed_limit # starting speed: 52.55 was the mean of first step implicit_sl for 300 vehicles
@@ -87,14 +80,14 @@ class VehicleAgent(Agent):
         self.speed_change = 0
         self.created_at_step = self.model.steps 
         self.steps_taken = 0 
-        self.distance_traveled = -model.space.get_distance(model.initial_start_point, model.start_point) 
+        self.distance_traveled = -model.space.get_distance(model.initial_start_point, model.start_point)  # (meters)
         self.car_interactions = 0
-        self.gap = 0 
-        self.ideal_gap=None
-        self.next_agent = None
-        self.driving_action = None
-        self.posted_speed_limit = None
-        self.implicit_speed_limit = None
+        self.gap = 0 # distance to next vehicle (m)
+        self.ideal_gap=None # desired following distance (m)
+        self.next_agent = None 
+        self.driving_action = None # what the car did this step, accelerate, break, coast, etc
+        self.posted_speed_limit = None # the posted speed limit of the road segment the car is currently on
+        self.implicit_speed_limit = None   # the speed limit adjusted for curvature, acceptable_over
 
         # Speed control tuning parameters (can be overridden)
         self.ideal_distance_multiplier = None
@@ -102,9 +95,6 @@ class VehicleAgent(Agent):
         self.curve_responce = None
         self.performance = .5
         self.accel_curve = build_empirical_accel_function(self.performance)
-
-       
-
 
         
     def end_of_road(self):
@@ -136,21 +126,16 @@ class VehicleAgent(Agent):
         Takes self, checks if a next_agent exists and status == driving, if so uses that, if not trys to find a new next agent. 
         '''
         # check if 1) next car is already saved & 2)it is driving. The secound check is to deal with when cars get removed at the end. This works because self.next_agent existing is tested first
-        if self.next_agent and self.next_agent.status in ["driving", "canyon_closed"]:
+        if self.next_agent and self.next_agent.status != 'arrived':
             return
         
-        # if the next agent does not exist look for a new next_agent
-        other_vehicles = self.model.agents.select(agent_type=VehicleAgent)
-        cars_ahead = [
-            agent for agent in other_vehicles
-            if agent.distance_traveled > self.distance_traveled
-        ]
-        
-        # set the next agent to the next vehicle, if no next vehicle then set to None
-        if cars_ahead:
-            self.next_agent = min(cars_ahead, key=lambda agent: agent.distance_traveled)
-        else:
-            self.next_agent = None
+        # Find the closest vehicle ahead (or None if there isn't one)
+        vehicles_ahead = self.model.agents.select(
+            lambda a: a.distance_traveled > self.distance_traveled,
+            agent_type=VehicleAgent,
+        )
+
+        self.next_agent = min(vehicles_ahead, key=lambda a: a.distance_traveled, default=None)
 
         
     def get_gap(self):
@@ -205,24 +190,18 @@ class VehicleAgent(Agent):
         next_road_agents = list(self.road_segments)[self.path_index:self.path_index+4]  # woah this is sus, how does this not retun index_out of range
            
         # recover the speed_limit and curvature and closures for the next few road agents 
-        closures = [agent.road_closed for agent in next_road_agents]
         posted_limit = [agent.speed_limit for agent in next_road_agents]
         curvatures = [agent.curvature for agent in next_road_agents]
 
-        # road closure adjustments 
-        if any(closures):
-            posted_limit = [agent.speed_limit if not agent.road_closed else 0 for agent in next_road_agents] # this implicitly requires 5 segments in a row to be closed for the car to stop 
-            implicit_speed_limit_mph = weighted_avg_of_list(posted_limit)
-            self.status = 'canyon_closed'
-        else:  
-            # weighted averages
-            average_posted_limit = weighted_avg_of_list(posted_limit)
-            average_curvature = weighted_avg_of_list(curvatures)
-    
-            # enter the info in to the curve adjust function 
-            curve_speed_limit_mph = curve_adjust(self.curve_responce, average_curvature, average_posted_limit)
-            implicit_speed_limit_mph = curve_speed_limit_mph + self.acceptable_over
-            self.status = 'driving'
+        # weighted averages
+        average_posted_limit = weighted_avg_of_list(posted_limit)
+        average_curvature = weighted_avg_of_list(curvatures)
+
+        # enter the info in to the curve adjust function 
+        curve_speed_limit_mph = curve_adjust(self.curve_responce, average_curvature, average_posted_limit)
+        implicit_speed_limit_mph = curve_speed_limit_mph + self.acceptable_over
+
+        self.status = 'driving' # <--- STATUS STUFF
 
         # save the speed limits
         self.posted_speed_limit=posted_limit[0] # this represents the posted sl of the road segment where the agent currently is
@@ -263,7 +242,7 @@ class VehicleAgent(Agent):
         elif mph_over > 0:
             return .2
    
-    def adjust_status(self):
+    def adjust_canyon_closed_status(self):
         '''
         Description: if i understand the order correctly, in a large backup situation self.status can be set to 'driving' by the get_speed_limit function 
         then overwritten to 'canyon_closed' in the same step by the adjust status. And because data is recorded at the end of the step the latter status will be recorded as the "True" status
@@ -286,12 +265,11 @@ class VehicleAgent(Agent):
         # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~- The initial adjust speed ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-
     def adjust_speed(self):
         ''' takes self from self uses'''
-        
         # run the data gathering functions
         self.get_next_agent()
         ideal_gap, gap  = self.get_gap() 
         implicit_speed_limit = self.get_speed_limit()
-        self.adjust_status()
+        self.adjust_canyon_closed_status()
         
         # save the current speed 
         old_speed = self.speed 
