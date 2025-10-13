@@ -29,6 +29,7 @@ def get_average_speed_relative_to_posted_sl(model):
     
     if not agents:
         return float('nan')
+    
     sl_deltas = [
         uc.get_mph(a.speed) - a.posted_speed_limit
         for a in agents

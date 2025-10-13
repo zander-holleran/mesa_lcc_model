@@ -87,9 +87,11 @@ def animate_traffic(cars_full, road_gdf, interval=60, step_skip=1, watch=None, z
             step_df_other = step_df
 
         # Assign colors by type
-        colors = step_df_other["AgentType"].map({
-            "CarAgent": "red",
-            "BusAgent": "blue"
+        colors = step_df_other["status"].map({
+            "driving": "grey",
+            "crash": "red",
+            "slowing": "yellow",
+            "canyon_closure": "blue"
         }).fillna("gray")
 
         # Set offsets
@@ -117,7 +119,7 @@ def animate_traffic(cars_full, road_gdf, interval=60, step_skip=1, watch=None, z
     return HTML(anim.to_jshtml())
 
 
-def animate_relative_distance(vehicle_df, agent_id, distance_behind):
+def animate_relative_distance(vehicle_df, agent_id, distance_behind, color_by='driving_action'):
     """
     Animate the relative positions of vehicles behind a reference agent.
 
@@ -155,7 +157,20 @@ def animate_relative_distance(vehicle_df, agent_id, distance_behind):
         "speed_limit_break":"yellow",
         "prevent_pass": "red",
     }
+    status_colors = {
+        "driving": "gray",
+        "crash": "red",
+        "slowing": "yellow",
+        "canyon_closure": "blue"
+    }
 
+    if color_by == 'status':
+        label_colors = status_colors
+    elif color_by == 'driving_action':
+        label_colors = driving_action_colors
+    else:
+        raise ValueError("color_by must be 'status' or 'driving_action'")
+    
     # Text label storage
     text_labels = []
 
@@ -173,8 +188,8 @@ def animate_relative_distance(vehicle_df, agent_id, distance_behind):
     # Add a legend for driving actions
     handles = [plt.Line2D([0], [0], marker='o', color='w', label=label,
                           markerfacecolor=color, markersize=8)
-               for label, color in driving_action_colors.items()]
-    ax.legend(handles=handles, loc='upper left', title="Driving Action")
+               for label, color in label_colors.items()]
+    ax.legend(handles=handles, loc='upper left', title=color_by)
 
     # All unique steps
     steps = sorted(vehicle_df["Step"].unique())
@@ -195,7 +210,7 @@ def animate_relative_distance(vehicle_df, agent_id, distance_behind):
         xs = step_df["distance_behind_ref"]
         coords = np.column_stack([xs, np.zeros(len(xs))])
         scat.set_offsets(coords)
-        colors = step_df["driving_action"].map(driving_action_colors).fillna("black")
+        colors = step_df[color_by].map(label_colors).fillna("black")
         scat.set_color(colors)
 
         #print(vehicle_df.head())

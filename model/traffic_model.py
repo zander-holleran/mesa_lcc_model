@@ -8,11 +8,7 @@ import pandas as pd
 from tqdm import tqdm
 
 # Import my agents
-from agents.vehicle_agent import VehicleAgent
-from agents.bus_agent import BusAgent
-from agents.car_agent import CarAgent
-from agents.road_segment_agent import RoadSegmentAgent
-from agents.blocker_agent import BlockerAgent
+from agents import VehicleAgent, BlockerAgent, BusAgent, CarAgent, RoadSegmentAgent
 
 # import my utils
 from utils import unit_conversion_utils as uc  # for get_mph, etc.
@@ -36,6 +32,14 @@ class TrafficModel(Model):
                  crashes_per_100k_vmt_input=22
                  ):
         super().__init__(seed=seed)
+
+        self.agent_cls = {
+            "vehicle": VehicleAgent,
+            "blocker": BlockerAgent,
+            'car': CarAgent,
+            "bus": BusAgent,
+            "road": RoadSegmentAgent,
+        }
         #model perams
         self.expected_counts_seconds = ecs_df
         self.max_steps = max_steps
@@ -166,7 +170,20 @@ class TrafficModel(Model):
         gen.generate_person(self)
         gen.generate_new_bus(self)
 
-        # crash function - should simplified in the step function 
+        # look ahead and assign who/waht the next agent is
+        all_vehicles = self.agents.select(agent_type=VehicleAgent)
+        all_vehicles.do('get_next_agent') # this assigns attributes the next agent object with the previous vehicle. Need to modify so that blocker objects are also considered.
+        all_vehicles.do('get_gap')  # Set Gap
+        all_vehicles.do('get_speed_limit')  # Set Speed Limit
+        all_vehicles.do('adjust_status')  # Set Status
+
+
+        # Driving actions
+        driving_vehicles = self.agents.select(lambda a: a.status == 'driving', agent_type=VehicleAgent)
+        self.agents.select(agent_type=VehicleAgent).do("adjust_speed")
+        self.agents.select(agent_type=VehicleAgent).do("move_along_path")
+
+        # Blocker actions
         active_vehicles = self.agents.select(agent_type=VehicleAgent)
         self.crashes, self.remainder = self.should_crash_randomized_rounding(
             crashes_per_100k_vmt=self.crashes_per_100k_vmt,
@@ -175,21 +192,12 @@ class TrafficModel(Model):
             remainder=self.remainder,
             rng=self.random
         )
-
         self.total_crashes += self.crashes
-        
+
         # will generate a blocker if crashes > 0, need to 
         gen.generate_crash(self)
         gen.generate_canyon_closure(self)
-
-        # look ahead and assign who/waht the next agent is
-        self.agents.do('get_next_agent') # this assigns attributes the next agent object with the previous vehicle. Need to modify so that blocker objects are also considered.
-        # Adjust speed accordingly 
-        self.agents.do("adjust_speed")
-        # Move along path based on speed
-        self.agents.do("move_along_path")
-        # Blockers tick down their self destruct timer
-        self.agents.select(lambda a: isinstance(a, BlockerAgent)).do("tick")
+        self.agents.select(agent_type=BlockerAgent).do("tick")
 
         # Collect data
         if (self.steps % self.collect_every_n) == 0:
@@ -197,8 +205,7 @@ class TrafficModel(Model):
 
         # end of step house keeping
         #clear vehicles here from the roads - necessary for road segment analysis 
-        for segment in self.road_segments:
-            segment.vehicles_here.clear()
+        self.agents.select(agent_type=RoadSegmentAgent).do("clear_vehicles")
             
         self.max_steps_check()
         self.max_persons_check()

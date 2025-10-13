@@ -14,14 +14,5 @@ class RoadSegmentAgent(Agent):
         self.linked_coord = linked_coord
         self.vehicles_here = []
         self.distance_traveled = distance_traveled
-
-    def adjust_speed(self):
-        """Tracks occupancy but does not move."""
-        pass
-        
-    def move_along_path(self):
-        pass
-
-     # stuff so that the step function does not break
-    def get_next_agent(self):
-        pass
+    
+    def clear_vehicles(self): self.vehicles_here.clear()

@@ -2,7 +2,8 @@ from mesa import Agent
 import numpy as np
 from scipy.stats import skewnorm
 
-from agents.road_segment_agent import RoadSegmentAgent
+# from agents import RoadSegmentAgent
+# from agents import BlockerAgent
 import utils.unit_conversion_utils as uc
 
 
@@ -67,13 +68,13 @@ class VehicleAgent(Agent):
         self.model.space.place_agent(self, model.start_point)  # <-- here is the intial place agent
         
         # init all the road segement data 
-        self.road_segments = self.model.agents.select(agent_type=RoadSegmentAgent)
+        self.road_segments = self.model.agents.select(agent_type=model.agent_cls['road'])
 
         # Establish the Vehicles position
         self.path = self.road_segments.get('pos')
         self.path_index = 0 
         self.status = "driving"
-        self.speed = self.road_segments[0].speed_limit # starting speed: 52.55 was the mean of first step implicit_sl for 300 vehicles
+        self.speed = self.road_segments[0].speed_limit # the attribute is stored in m/s even tho the analysis is in mph
         self.break_cooldown = 0
         
         # For data collection 
@@ -82,7 +83,7 @@ class VehicleAgent(Agent):
         self.steps_taken = 0 
         self.distance_traveled = -model.space.get_distance(model.initial_start_point, model.start_point)  # (meters)
         self.car_interactions = 0
-        self.gap = 0 # distance to next vehicle (m)
+        self.gap = 9999999 # distance to next vehicle (m) starts as effectively infinite
         self.ideal_gap=None # desired following distance (m)
         self.next_agent = None 
         self.driving_action = None # what the car did this step, accelerate, break, coast, etc
@@ -128,16 +129,18 @@ class VehicleAgent(Agent):
         # check if 1) next car is already saved & 2)it is driving. The secound check is to deal with when cars get removed at the end. This works because self.next_agent existing is tested first
         if self.next_agent and self.next_agent.status != 'arrived':
             return
-        
         # Find the closest vehicle ahead (or None if there isn't one)
         vehicles_ahead = self.model.agents.select(
             lambda a: a.distance_traveled > self.distance_traveled,
-            agent_type=VehicleAgent,
+            agent_type=(VehicleAgent, self.model.agent_cls['blocker']),
         )
 
         self.next_agent = min(vehicles_ahead, key=lambda a: a.distance_traveled, default=None)
 
-        
+    def reset_next_agent(self):
+        '''used at verious points to clear the next_agent var'''
+        self.next_agent = None
+
     def get_gap(self):
             """
             Returns:
@@ -151,11 +154,10 @@ class VehicleAgent(Agent):
             if self.next_agent: 
                 gap = self.model.space.get_distance(self.pos, self.next_agent.pos)
             else:
-                gap = np.nan
+                gap = 9999999 # effectively infinite gap if no next agent
             self.ideal_gap = ideal_gap
             self.gap = gap
-            
-            return ideal_gap, gap
+
         
     def get_speed_limit(self):
         ''' Description: Gathers data from road agents. Selects N road agents and takes a weighted average of the posted_limit and the curvatures. Combines these into curve_speed_limit_mph. Adds  
@@ -201,12 +203,11 @@ class VehicleAgent(Agent):
         curve_speed_limit_mph = curve_adjust(self.curve_responce, average_curvature, average_posted_limit)
         implicit_speed_limit_mph = curve_speed_limit_mph + self.acceptable_over
 
-        self.status = 'driving' # <--- STATUS STUFF
-
         # save the speed limits
         self.posted_speed_limit=posted_limit[0] # this represents the posted sl of the road segment where the agent currently is
         self.implicit_speed_limit = implicit_speed_limit_mph
-        return  uc.get_mps(implicit_speed_limit_mph)  
+        return
+       
 
     def less_smooth_brake(self, gap, ideal_gap):
         """
@@ -242,50 +243,43 @@ class VehicleAgent(Agent):
         elif mph_over > 0:
             return .2
    
-    def adjust_canyon_closed_status(self):
+    def adjust_status(self):
         '''
-        Description: if i understand the order correctly, in a large backup situation self.status can be set to 'driving' by the get_speed_limit function 
-        then overwritten to 'canyon_closed' in the same step by the adjust status. And because data is recorded at the end of the step the latter status will be recorded as the "True" status
+       used to set the status of the car, driving, canyon_closure, crash ect
         '''
-        if not self.next_agent: # if no next agent just skip
+        if not self.next_agent or self.next_agent.status == 'driving': # if no next agent or next agent is driving then you are driving
+            self.status = 'driving'
             return 
-            
-        if self.status == self.next_agent.status: # if you have the same status as those in front of you dont adjust
+        elif self.gap <= self.ideal_gap and self.next_agent.status != 'driving': # if you are too close to a non driving next agent then status is their status
+            self.status = 'slowing'
+            # additionally if you become blocked you take on a different status
+            if self.speed < 1: 
+                self.status = self.next_agent.status
             return
-            
-        if self.gap <= self.ideal_gap and self.next_agent.status == 'canyon_closed': 
-            self.status = 'canyon_closed'
+        else: # if you are far enough away from a non driving next agent then you are driving
+            self.status = 'driving'
             return
-
-        if self.next_agent.status == 'driving' and self.status =='canyon_closed': # this will only trigger i
-            self.status = 'driving' 
-            return 
             
 
         # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~- The initial adjust speed ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-
     def adjust_speed(self):
         ''' takes self from self uses'''
-        # run the data gathering functions
-        self.get_next_agent()
-        ideal_gap, gap  = self.get_gap() 
-        implicit_speed_limit = self.get_speed_limit()
-        self.adjust_canyon_closed_status()
-        
+        implicit_speed_limit_mps =  uc.get_mps(self.implicit_speed_limit)        
         # save the current speed 
         old_speed = self.speed 
         
         # 1) measues the gap to the next vehicle, if less than the ideal gap, applies the smooth breaking
-        if gap < ideal_gap:
+        if self.gap < self.ideal_gap:
             self.driving_action = 'smooth_break'
             self.car_interactions += 1
             self.break_cooldown = 5
-            self.speed -= self.less_smooth_brake(gap=gap, ideal_gap=ideal_gap)
+            self.speed -= self.less_smooth_brake(gap=self.gap, ideal_gap=self.ideal_gap)
 
         # 3) if outside the jitter threashhold see if the car is above speed limit, if so break
-        elif self.speed > implicit_speed_limit:
+        elif self.speed > implicit_speed_limit_mps:
             self.driving_action = 'speed_limit_break'
             self.break_cooldown = 3
-            self.speed -= self.speed_limit_brake(speed_limit=implicit_speed_limit, speed=self.speed)
+            self.speed -= self.speed_limit_brake(speed_limit=implicit_speed_limit_mps, speed=self.speed)
             
         # 4) if outside the jitter threashhold & below speed limit & max speed then speed up 
         elif self.break_cooldown in [4,5]:
@@ -302,7 +296,7 @@ class VehicleAgent(Agent):
             self.speed+= self.accel_curve(uc.get_mph(self.speed))
 
         # overwrites
-        if (self.next_agent is not None) and ((self.speed - self.next_agent.speed) > gap):
+        if (self.next_agent is not None) and ((self.speed - self.next_agent.speed) > self.gap):
             self.driving_action = 'prevent_pass'
             self.break_cooldown = 5
             self.speed = self.next_agent.speed-1

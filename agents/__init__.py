@@ -2,6 +2,7 @@ from .vehicle_agent import VehicleAgent
 from .bus_agent import BusAgent
 from .car_agent import CarAgent
 from .road_segment_agent import RoadSegmentAgent
+from .blocker_agent import BlockerAgent
 from .person_agent import PersonAgent # if you create one
 
 __all__ = [
@@ -9,5 +10,6 @@ __all__ = [
     "BusAgent",
     "CarAgent",
     "RoadSegmentAgent",
-    "PersonAgent"
+    "PersonAgent",
+    "BlockerAgent",
 ]
