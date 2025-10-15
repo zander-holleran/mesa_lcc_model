@@ -6,7 +6,6 @@ from scipy.stats import skewnorm
 # from agents import BlockerAgent
 import utils.unit_conversion_utils as uc
 
-
 # this has to be externial to VehicleAgent because each VehicleAgent gets one accel() function build_empirical_accel_function produces an accel(). 
 # it would not work if VehicleAgent got build_empirical_accel_function
 def build_empirical_accel_function(pctile, mean_shift=-.2 , var_streach=1.3):
@@ -64,24 +63,45 @@ def build_empirical_accel_function(pctile, mean_shift=-.2 , var_streach=1.3):
 class VehicleAgent(Agent):
     def __init__(self, model):
         super().__init__(model)
-        # place the agent
-        self.model.space.place_agent(self, model.start_point)  # <-- here is the intial place agent
+         # 1) freeze this vehicle's spawn and place it
+        p_start = np.array(model.start_point, dtype=float)
+        self.model.space.place_agent(self, tuple(p_start))
         
-        # init all the road segement data 
-        self.road_segments = self.model.agents.select(agent_type=model.agent_cls['road'])
+        
 
-        # Establish the Vehicles position
-        self.path = self.road_segments.get('pos')
-        self.path_index = 0 
+        # 2) freeze road segments and build path points (replace first point with p_start)
+        road_agents = self.model.agents.select(agent_type=self.model.agent_cls['road'])
+        self.road_segments = road_agents
+        self._rs = list(road_agents)                              # fixed order
+        real_xy = np.array([rs.pos for rs in self._rs], float)    # points for road
+        real_xy[0] = p_start                                      # replace first point
+        self.path_xy = real_xy                                    # single source of truth (points)
+
+         # 3) stuff for speed limit lookup
+        self.N_ahead = 5
+        self._seg_speed = np.fromiter((r.speed_limit for r in self._rs), dtype=float)  # m/s
+        self._seg_curve = np.fromiter((r.curvature   for r in self._rs), dtype=float)
+        w = np.array([1.0/(1+i) for i in range(self.N_ahead)], dtype=float)
+        self._weights = w / w.sum()
+
+        # 4) for move along path
+        seg_vec = self.path_xy[1:] - self.path_xy[:-1]            # shape [n-1, 2]
+        seg_len = np.hypot(seg_vec[:, 0], seg_vec[:, 1])
+        seg_len[seg_len == 0.0] = 1e-12                           # guard zero length
+        self._seg_vec = seg_vec
+        self._seg_len = seg_len
+        self._seg_dir = seg_vec / seg_len[:, None]
+        self.path_index = 0               # 0..(n-2): which segment we're on
+        self._s = 0.0                     # distance traveled within current segment
+
+        # ---- 5) For data collection ----
         self.status = "driving"
         self.speed = self.road_segments[0].speed_limit # the attribute is stored in m/s even tho the analysis is in mph
+        self.distance_traveled = -model.space.get_distance(model.initial_start_point, tuple(p_start))  # (meters)
         self.break_cooldown = 0
-        
-        # For data collection 
         self.speed_change = 0
         self.created_at_step = self.model.steps 
         self.steps_taken = 0 
-        self.distance_traveled = -model.space.get_distance(model.initial_start_point, model.start_point)  # (meters)
         self.car_interactions = 0
         self.gap = 9999999 # distance to next vehicle (m) starts as effectively infinite
         self.ideal_gap=None # desired following distance (m)
@@ -96,29 +116,6 @@ class VehicleAgent(Agent):
         self.curve_responce = None
         self.performance = .5
         self.accel_curve = build_empirical_accel_function(self.performance)
-
-        
-    def end_of_road(self):
-        '''this is where one part of finished agents reporting occures, is paired with '''
-        if self.path_index >= len(self.path) - 1:
-            self.status = "arrived"
-            
-            self.model.finished_agents.append({
-                "AgentID": self.unique_id,
-                'AgentType': self.__class__.__name__,
-                "created_at_step": self.created_at_step,
-                "steps_taken": self.steps_taken,
-                "car_interactions": self.car_interactions, 
-                "distance_traveled": self.distance_traveled, 
-                "approx_average_mph": uc.meters_to_miles(self.distance_traveled)/(self.steps_taken/3600), 
-                'performance': self.performance,
-                'curve_responce': self.curve_responce,
-                "acceptable_over": uc.get_mph(self.acceptable_over),
-                "ideal_distance_multiplier":self.ideal_distance_multiplier
-            # Add more if needed
-            })
-            self.remove() 
-            return True
 
 
     def get_next_agent(self): 
@@ -158,57 +155,44 @@ class VehicleAgent(Agent):
             self.ideal_gap = ideal_gap
             self.gap = gap
 
-        
+    # Fast clip for scalars
+    def _clip01(self, x: float) -> float:
+        if x < 0.0: return 0.0
+        if x > 1.0: return 1.0
+        return x
+
     def get_speed_limit(self):
-        ''' Description: Gathers data from road agents. Selects N road agents and takes a weighted average of the posted_limit and the curvatures. Combines these into curve_speed_limit_mph. Adds  
-            self.acceptiable_over to create self.implicit_speed_limit_mph. It should be obvious but this is in MPH, this is the var used in the analysis functions. Where as
-            uc.get_mps(implicit_speed_limit_mph) is returned by the function and is used by adjust speed
-            maybe unappresiated but because this function looks at next_road_agents(n=5) then takes a weighted average of speed limits. 
-            The weights are assigned as following [1/(1+1), 1/(1+2), 1/(1+3)... ] ie [.5, .33, .25, ... ]  
-            '''
-        
-        def curve_adjust(max_affect_pct=0.5, curvature=45, speed=60):
-            '''
-            max_affect_pct - float: max possible speed reduction proportion at extreme curve
-            curvature - float: standardized curve (0-90 degrees ideally)
-            speed - float: current vehicle speed in mph
-            '''
-            curve_effect = curvature/90  # normalized curvature
-            curve_effect = np.clip(curve_effect, 0, 1)  # protect against overcurve
-        
-            if speed <= 15:
-                speed_effect = 0  # no curve penalty below 15 mph
-            else:
-                speed_effect = (speed - 10) / (60 - 10)  # normalized to [0, 1] between 15 and 60 mph
-                speed_effect = np.clip(speed_effect, 0, 1)  # protect against overspeed
-            return speed * (1 - (max_affect_pct * curve_effect * speed_effect))
+        # ----- slice cached arrays (no list() rebuild) -----
+        i = self.path_index
+        j = i + self.N_ahead
+        sl = self._seg_speed[i:j]   # posted speed limits ahead
+        cv = self._seg_curve[i:j]   # curvatures ahead
 
-        def weighted_avg_of_list(list_of_items):
-            weights = np.array([1 / (1 + i) for i in range(len(list_of_items))])
-            return np.average(list_of_items, weights=weights)
+        # weights truncated to actual slice length, renormalized (end-of-path safety)
+        w = self._weights[: len(sl)]
+        if w.size != self._weights.size:
+            w = w / w.sum()
 
-        # gather the data from the road segments
-        # 1. Get the 5 agents
-        next_road_agents = list(self.road_segments)[self.path_index:self.path_index+4]  # woah this is sus, how does this not retun index_out of range
-           
-        # recover the speed_limit and curvature and closures for the next few road agents 
-        posted_limit = [agent.speed_limit for agent in next_road_agents]
-        curvatures = [agent.curvature for agent in next_road_agents]
+        # tiny dot products (faster than np.average for small N)
+        avg_sl = float((sl * w).sum())
+        avg_cv = float((cv * w).sum())
 
-        # weighted averages
-        average_posted_limit = weighted_avg_of_list(posted_limit)
-        average_curvature = weighted_avg_of_list(curvatures)
+        # ----- curve_adjust (branchy, no numpy) -----
+        curve_effect  = self._clip01(avg_cv/90.0)
+        if avg_sl <= 15.0:
+            speed_effect = 0.0
+        else:
+            speed_effect = self._clip01((avg_sl - 10.0) / (60.0 - 10.0))
 
-        # enter the info in to the curve adjust function 
-        curve_speed_limit_mph = curve_adjust(self.curve_responce, average_curvature, average_posted_limit)
+        curve_speed_limit_mph = avg_sl * (1.0 - (self.curve_responce * curve_effect * speed_effect))
         implicit_speed_limit_mph = curve_speed_limit_mph + self.acceptable_over
 
-        # save the speed limits
-        self.posted_speed_limit=posted_limit[0] # this represents the posted sl of the road segment where the agent currently is
+        # save
+        # posted speed limit of CURRENT segment (0-length slice safe)
+        self.posted_speed_limit = float(self._seg_speed[i]) if i < self._seg_speed.size else float(self._seg_speed[-1])
         self.implicit_speed_limit = implicit_speed_limit_mph
-        return
-       
-
+        # (function returns None, same as before)
+    
     def less_smooth_brake(self, gap, ideal_gap):
         """
         Simulate more realistic, human-like braking behavior.
@@ -307,36 +291,68 @@ class VehicleAgent(Agent):
         # new speed - old speed
         self.speed_change = self.speed - old_speed
     
-            
-    def move_along_path(self):
-        """Move the agent along its predefined path based on current speed."""
-        distance_to_travel = self.speed # sets a local variable in the function 
-        self.distance_traveled += distance_to_travel # adds distance_to_travel(from this step) to the overall distance traveled
-        pos = np.array(self.pos) # current position 
-        new_position = pos
         
-        while distance_to_travel > 0 and not self.end_of_road():
-            next_target = np.array(self.path[self.path_index + 1])
-            direction = self.model.space.get_heading(pos, next_target)
-            distance = self.model.space.get_distance(pos, next_target)
-    
-            if distance < distance_to_travel:
-                self.path_index += 1    
-                distance_to_travel -= distance
-                pos = next_target
-                new_position = pos
+    def end_of_road(self):
+        '''this is where one part of finished agents reporting occures, is paired with '''
+        self.status = "arrived"
+        self.model.finished_agents.append({
+            "AgentID": self.unique_id,
+            'AgentType': self.__class__.__name__,
+            "created_at_step": self.created_at_step,
+            "steps_taken": self.steps_taken,
+            "car_interactions": self.car_interactions, 
+            "distance_traveled": self.distance_traveled, 
+            "approx_average_mph": uc.meters_to_miles(self.distance_traveled)/(self.steps_taken/3600), 
+            'performance': self.performance,
+            'curve_responce': self.curve_responce,
+            "acceptable_over": uc.get_mph(self.acceptable_over),
+            "ideal_distance_multiplier":self.ideal_distance_multiplier
+        # Add more if needed
+        })
+        self.remove() 
+              
+    def move_along_path(self):
+        """Advance along path by self.speed meters using a single path + index."""
+       
+        if self.speed <= 0.0:  # early out for not moving
+            # pin at the last point
+            self.steps_taken += 1
+            return
+                    
+        d = float(self.speed)
+        self.distance_traveled += d # bookkeeping
+        i = self.path_index
+        s = self._s
+
+        # consume distance across segments
+        while d > 0.0 and i < self._seg_len.size:
+            rem = self._seg_len[i] - s
+            if d < rem:
+                s += d
+                d = 0.0
             else:
-                step_vector = distance_to_travel * direction / distance
-                new_position = pos + step_vector
-                distance_to_travel = 0
+                d -= rem
+                i += 1
+                s = 0.0
 
-        # after you have figured out where ur going to move to 
-        # 1) add yourself to that road_segment's vehicles_here
-        new_segment = self.road_segments[self.path_index]
-        new_segment.vehicles_here.append(self)
-        # 2) incroment the steps taken 
-        self.steps_taken += 1  
-        # 3) actually move the agent
-        self.model.space.move_agent(self, tuple(new_position))
+        
+        if i >= self._seg_len.size: # if at end of road
+            i = self._seg_len.size - 1
+            s = self._seg_len[i]
+            new_pos = self.path_xy[-1]
+            self.end_of_road()
+        else:
+            start_of_seg = self.path_xy[i]
+            new_pos = start_of_seg + self._seg_dir[i] * s # this identifies the new pos as the start of the seg + the direction of the seg * how far into the seg you are (s)
 
 
+        if 0 <= i < len(self._rs):
+            self.road_segments[i].vehicles_here.append(self)
+
+        # book keeping
+        self.path_index = i
+        self._s = s
+        self.steps_taken += 1
+
+        # finally move the agent
+        self.model.space.move_agent(self, (float(new_pos[0]), float(new_pos[1])))

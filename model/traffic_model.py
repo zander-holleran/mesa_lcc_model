@@ -45,9 +45,9 @@ class TrafficModel(Model):
         self.max_steps = max_steps
         self.batchrun = batchrun
         self.collect_every_n = collect_every_n
-        self.initial_start_point = road_gdf.iloc[0].geometry.coords[0] # this one will go unchanged through out the model run 
-        self.start_point = road_gdf.iloc[0].geometry.coords[0] # this one might change depending on if too_close is triggered
-        
+        self.initial_start_point = tuple(road_gdf.iloc[0].geometry.coords[0])  # never changes
+        self.start_point = tuple(road_gdf.iloc[0].geometry.coords[0])          # may be moved by "too_close" logic
+
         # car centric perams
         self.start_step = uc.sec_after_five(start_hr)
         self.traffic_percentile = traffic_percentile
@@ -174,21 +174,21 @@ class TrafficModel(Model):
         all_vehicles = self.agents.select(agent_type=VehicleAgent)
         all_vehicles.do('get_next_agent') # this assigns attributes the next agent object with the previous vehicle. Need to modify so that blocker objects are also considered.
         all_vehicles.do('get_gap')  # Set Gap
-        all_vehicles.do('get_speed_limit')  # Set Speed Limit
         all_vehicles.do('adjust_status')  # Set Status
 
 
         # Driving actions
-        driving_vehicles = self.agents.select(lambda a: a.status == 'driving', agent_type=VehicleAgent)
-        self.agents.select(agent_type=VehicleAgent).do("adjust_speed")
-        self.agents.select(agent_type=VehicleAgent).do("move_along_path")
+        driving_vehicles = self.agents.select(lambda a: a.status in ('driving','slowing'), agent_type=VehicleAgent)
+        driving_vehicles.do('get_speed_limit')  # Set Speed Limit
+        driving_vehicles.do("adjust_speed")
+        driving_vehicles.do("move_along_path")
 
         # Blocker actions
-        active_vehicles = self.agents.select(agent_type=VehicleAgent)
+        #active_vehicles = self.agents.select(agent_type=VehicleAgent)
         self.crashes, self.remainder = self.should_crash_randomized_rounding(
             crashes_per_100k_vmt=self.crashes_per_100k_vmt,
-            num_cars=len(active_vehicles),
-            avg_speed_mps=np.mean([veh.speed for veh in active_vehicles]) if len(active_vehicles) > 0 else 1,
+            num_cars=len(driving_vehicles),
+            avg_speed_mps=np.mean([veh.speed for veh in driving_vehicles]) if len(driving_vehicles) > 0 else 1,
             remainder=self.remainder,
             rng=self.random
         )
