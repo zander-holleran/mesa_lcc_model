@@ -67,12 +67,9 @@ class VehicleAgent(Agent):
         p_start = np.array(model.start_point, dtype=float)
         self.model.space.place_agent(self, tuple(p_start))
         
-        
-
         # 2) freeze road segments and build path points (replace first point with p_start)
-        road_agents = self.model.agents.select(agent_type=self.model.agent_cls['road'])
-        self.road_segments = road_agents
-        self._rs = list(road_agents)                              # fixed order
+        self.road_segments = self.model.agents.select(agent_type=self.model.agent_cls['road'])
+        self._rs = list(self.road_segments)                              # fixed order
         real_xy = np.array([rs.pos for rs in self._rs], float)    # points for road
         real_xy[0] = p_start                                      # replace first point
         self.path_xy = real_xy                                    # single source of truth (points)
@@ -103,15 +100,15 @@ class VehicleAgent(Agent):
         self.created_at_step = self.model.steps 
         self.steps_taken = 0 
         self.car_interactions = 0
-        self.gap = 9999999 # distance to next vehicle (m) starts as effectively infinite
-        self.ideal_gap=None # desired following distance (m)
+        self.gap = 9_999_999 # distance to next vehicle (m) starts as effectively infinite
+        self.ideal_distance_multiplier = 1.5
+        self.ideal_gap=max(self.speed * self.ideal_distance_multiplier,5) # desired following distance (m)
         self.next_agent = None 
         self.driving_action = None # what the car did this step, accelerate, break, coast, etc
         self.posted_speed_limit = None # the posted speed limit of the road segment the car is currently on
         self.implicit_speed_limit = None   # the speed limit adjusted for curvature, acceptable_over
 
         # Speed control tuning parameters (can be overridden)
-        self.ideal_distance_multiplier = None
         self.acceptable_over = None
         self.curve_responce = None
         self.performance = .5
@@ -244,7 +241,6 @@ class VehicleAgent(Agent):
             self.status = 'driving'
             return
             
-
         # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~- The initial adjust speed ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-
     def adjust_speed(self):
         ''' takes self from self uses'''
@@ -287,7 +283,8 @@ class VehicleAgent(Agent):
 
         # dont go backwards
         self.speed = max(self.speed, 0)
-        
+        self.ideal_gap = max(self.speed * self.ideal_distance_multiplier,5)
+
         # new speed - old speed
         self.speed_change = self.speed - old_speed
     
@@ -307,13 +304,20 @@ class VehicleAgent(Agent):
             'curve_responce': self.curve_responce,
             "acceptable_over": uc.get_mph(self.acceptable_over),
             "ideal_distance_multiplier":self.ideal_distance_multiplier
-        # Add more if needed
+            # Add more if needed
         })
-        self.remove() 
+
+        
+        try: self._rs[self.path_index].vehicles_here.remove(self)       # remove from road segment
+        except Exception: pass
+        try: self.model.space.remove_agent(self)                        # remove from agent set
+        except Exception:pass
+        try: self.model.vehicles_list.remove(self)                      # remove from vehicles list
+        except ValueError: pass 
+        self.remove() # remove from model
               
     def move_along_path(self):
         """Advance along path by self.speed meters using a single path + index."""
-       
         if self.speed <= 0.0:  # early out for not moving
             # pin at the last point
             self.steps_taken += 1

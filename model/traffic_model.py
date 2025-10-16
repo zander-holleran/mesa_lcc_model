@@ -80,7 +80,7 @@ class TrafficModel(Model):
         self.bus_riders = 0 
         self.at_bus_stop = 0 
         self.finished_agents = []
-        
+
         # Set up ContinuousSpace
         buffer = 1000
         minx, miny, maxx, maxy = road_gdf.total_bounds
@@ -101,6 +101,10 @@ class TrafficModel(Model):
             self.datacollector = DataCollector(model_reporters = rep.model_reporters)
         else:
             self.datacollector = DataCollector(model_reporters = rep.model_reporters, agent_reporters = rep.agent_reporters)
+
+        # agent lists
+        self.vehicles_list = []
+        self.blockers_list = []
 
     # -~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~ END OF INIT -~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
     def model_stop_process(self):
@@ -159,6 +163,25 @@ class TrafficModel(Model):
         new_remainder = total - crashes  # keep only the fractional part
         return crashes, new_remainder
     
+    def update_next_agents(self):
+        # 1) Collect candidates once (avoid AgentSet scans inside per-agent code)
+        vehicles = list(self.agents.select(agent_type=VehicleAgent))
+        blockers = list(self.agents.select(agent_type=self.agent_cls["blocker"]))
+        next_agents = vehicles + blockers
+
+        if not next_agents:
+            return
+
+        # 2) Sort by along-road progress; tie-break by object id (stable)
+        next_agents.sort(key=lambda a: (a.distance_traveled, id(a)))
+
+        # Assign next_agent and gap for each vehicle (and blocker)
+        last = len(next_agents) - 1
+        for i, a in enumerate(next_agents):
+            na = next_agents[i + 1] if i < last else None
+            a.next_agent = na
+            a.gap = (na.distance_traveled - a.distance_traveled) if na is not None else float("inf")
+    
     # -~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~ THE STEP  -~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
     def step(self):
         # establish what p_generate is going to be for that step
@@ -172,8 +195,9 @@ class TrafficModel(Model):
 
         # look ahead and assign who/waht the next agent is
         all_vehicles = self.agents.select(agent_type=VehicleAgent)
-        all_vehicles.do('get_next_agent') # this assigns attributes the next agent object with the previous vehicle. Need to modify so that blocker objects are also considered.
-        all_vehicles.do('get_gap')  # Set Gap
+        self.update_next_agents()
+        # all_vehicles.do('get_next_agent') # this assigns attributes the next agent object with the previous vehicle. Need to modify so that blocker objects are also considered.
+        # all_vehicles.do('get_gap')  # Set Gap
         all_vehicles.do('adjust_status')  # Set Status
 
 
@@ -217,7 +241,14 @@ class TrafficModel(Model):
         #while self.running:
             self.step()
     
-    
+
+    # def fast_do(agents, method_name, *args, **kwargs):
+    #     # iterate over a snapshot in case the list mutates (agents remove themselves, etc.)
+    #     for a in list(agents):
+    #         getattr(a, method_name)(*args, **kwargs)
+
+    # do(self.vehicles_list, "step")
+    # do(self.blockers_list, "tick")
    
 
 

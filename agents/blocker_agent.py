@@ -20,12 +20,19 @@ class BlockerAgent(Agent):
 
         # IMPORTANT upon blocker creation nxt agent of all vehicles is reset to None
         self.model.agents.select(agent_type=VehicleAgent).do("reset_next_agent") 
+
+        # holder to speed up next agent assignment
+        self.next_agent = None
+        self.gap = 9_999_999.0  # distance to next vehicle (m) starts
         
     def self_distruct(self):
         # Remove from the model's AgentSet
         print(f"Blocker {self.unique_id} self-destructed.")
-        self.model.agents.select(agent_type=VehicleAgent).do("reset_next_agent") 
-        self.model.agents.remove(self)
+        self.model.agents.select(agent_type=VehicleAgent).do("reset_next_agent") # IMPORTANT upon blocker destruction nxt agent of all vehicles is reset to None
+        
+        try: self.model.vehicles_list.remove(self)   # drop from vehicles list
+        except ValueError: pass
+        self.model.agents.remove(self)               # drop from agent set
 
     def tick(self):
         self.self_distruct_timer -= 1

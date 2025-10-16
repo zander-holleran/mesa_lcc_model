@@ -30,6 +30,7 @@ def generate_new_bus(model):
             too_close(model)
             new_bus = model.agent_cls['bus'].create_agents(model=model, n=1)
             model.agents.add(*new_bus)
+            model.vehicles_list.append(new_bus[0])
             model.bus_counter += 1
             model.person_counter += model.at_bus_stop
             model.bus_riders += model.at_bus_stop 
@@ -45,6 +46,8 @@ def generate_person(model):
             if (model.random.random() < model.car_preference) or (model.at_bus_stop >= model.bus_capacity):
                 new_car = model.agent_cls['car'].create_agents(model=model, n=1)
                 model.agents.add(*new_car) 
+                model.vehicles_list.append(new_car[0])
+
                 # this person got in a car
                 model.person_counter += 1
                 model.car_counter += 1 
@@ -57,6 +60,7 @@ def generate_blocker(model, blocker_type, self_distruct_timer, road_segment):
         print(f"{blocker_type} at step {model.steps} on segment {road_segment.pos}")
         new_blocker = model.agent_cls['blocker'].create_agents(model=model, n=1, blocker_type=blocker_type, self_distruct_timer=self_distruct_timer, road_segment=road_segment)
         model.agents.add(*new_blocker)
+        model.blockers_list.append(new_blocker[0])
 
 def generate_crash(model): 
     if model.crashes == 0:
@@ -71,7 +75,6 @@ def generate_crash(model):
 
     # Step 2: pick one at random (or None if none exist)
     segment = model.random.choice(list(occupied_segments)) if len(occupied_segments) else None
-    
     if segment:
         generate_blocker(model=model, blocker_type="crash", self_distruct_timer=model.random.randint(60, 300), road_segment=segment) # this is where blocker duration is set, currently between 1 and 5 mins
     else:
