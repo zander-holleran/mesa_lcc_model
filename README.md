@@ -1,5 +1,5 @@
 
-# Little Cottonwood Canyon Traffic Model – README (Revised)
+# Little Cottonwood Canyon Traffic Model – README 
 
 ## Overview and Purpose
 
@@ -131,8 +131,6 @@ To visualize or animate the output, see `animation_utils.py`.
 - **Randomness**: Only some randomness is persistent (e.g., `acceptable_over`). Braking variation is random **each instance**, not per vehicle.
 - **Extending Behavior**: Easily subclass agents or add new ones (e.g., `TruckAgent`).
 - **Closure logic**: Vehicles pause at closures; no need to simulate disappearance or rerouting.
-- **`du.make_truncnorm`**: Custom distribution used throughout. Important: min and max values **are not symmetric around the mean** and **negative values like `acceptable_over < 0` are valid**.
-
 ---
 
 ## Summary
