@@ -21,7 +21,7 @@ def make_scale_legend(ax, wx, wy):
     label_offset = 30
 
     # Draw the main bar
-    ax.add_patch(patches.Rectangle(
+    ax.add_patch(Rectangle(
         (base_x, base_y), bar_length, 5, color="black"
     ))
 
