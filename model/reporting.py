@@ -1,6 +1,5 @@
 from mesa.datacollection import DataCollector
 import numpy as np
-from utils import unit_conversion_utils as uc  # for get_mph, etc.
 from agents import VehicleAgent
 from collections import defaultdict
 import utils.unit_conversion_utils as uc
