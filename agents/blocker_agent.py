@@ -27,7 +27,6 @@ class BlockerAgent(Agent):
         
     def self_distruct(self):
         # Remove from the model's AgentSet
-        print(f"Blocker {self.unique_id} self-destructed.")
         self.model.agents.select(agent_type=VehicleAgent).do("reset_next_agent") # IMPORTANT upon blocker destruction nxt agent of all vehicles is reset to None
         
         try: self.model.vehicles_list.remove(self)   # drop from vehicles list
