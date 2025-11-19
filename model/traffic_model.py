@@ -82,7 +82,7 @@ class TrafficModel(Model):
         self.finished_agents = []
 
         # Set up ContinuousSpace
-        buffer = 1000
+        buffer = 10000
         minx, miny, maxx, maxy = road_gdf.total_bounds
         self.space = ContinuousSpace(x_min=minx - buffer, x_max=maxx + buffer, y_min=miny - buffer, y_max=maxy + buffer, torus=False)
 
