@@ -1,11 +1,10 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib import patches
+import seaborn as sns
+from matplotlib.patches import Rectangle
 from matplotlib.animation import FuncAnimation
 from IPython.display import HTML
 from shapely.geometry import LineString
-
-
 # -~-~-~-~-~-~-~-~-~-~-~-~ animations -~-~-~-~-~-~-~-~-~-~-~-~
 def make_scale_legend(ax, wx, wy):
     #half baked make scale function 
@@ -234,3 +233,115 @@ def animate_relative_distance(vehicle_df, agent_id, distance_behind, color_by='d
 
 
 
+def animate_traffic_with_speed_delta_highlight(vehicles_full, road_gdf, model_ts, interval=60, step_skip=1, watch=None, zoom=1, highlight_width=100):
+    """
+    Animation of vehicle movement along a road, with a static speed delta plot and a moving highlight rectangle.
+    The speed delta plot is drawn once (with seaborn), and a rectangle highlights a window of steps as the animation progresses.
+    """
+    import matplotlib.gridspec as gridspec
+
+    # Prepare vehicle positions
+    vehicles_full['x'] = vehicles_full['pos'].apply(lambda p: p[0])
+    vehicles_full['y'] = vehicles_full['pos'].apply(lambda p: p[1])
+    road_line = LineString(road_gdf.geometry.tolist())
+    x_road, y_road = road_line.xy
+    steps = sorted(set(vehicles_full["Step"]))[::step_skip]
+
+    # Prepare cumulative data for speed delta plot
+    sl_delta_data = vehicles_full.loc[vehicles_full.status == 'driving'].sort_values('Step')
+    model_ts = model_ts.sort_values('Step')
+
+    # Set up side-by-side plots
+    fig = plt.figure(figsize=(20, 6))
+    gs = gridspec.GridSpec(1, 2, width_ratios=[2, 1.5])
+    ax_anim = fig.add_subplot(gs[0])
+    ax_delta = fig.add_subplot(gs[1])
+
+    # Road plot setup
+    ax_anim.plot(x_road, y_road, color='black', linewidth=2, label="Road")
+    scat_all = ax_anim.scatter([], [], s=20, label='Vehicles')
+    scat_watch = ax_anim.scatter([], [], s=40, color='purple', label='Watched')
+    if watch is None:
+        ax_anim.set_xlim(min(x_road) - 50, max(x_road) + 50)
+        ax_anim.set_ylim(min(y_road) - 50, max(y_road) + 50)
+
+    # --- Static speed delta plot ---
+    ax_delta.set_ylabel("Speed Δ (mph)", fontsize=12)
+    ax_delta.set_ylim(-40, 5)
+    ax_delta2 = ax_delta.twinx()
+    ax_delta2.set_ylabel("Vehicle Volume", fontsize=10, rotation=270, labelpad=15)
+    ax_delta2.set_ylim(0, model_ts['volume'].max()*3)
+    ax_delta2.yaxis.set_label_position("right")
+    ax_delta2.yaxis.tick_right()
+    ax_delta.set_xlabel("Step")
+
+    N = 10  # downsample factor
+    window = 20  # rolling window for smoothing
+
+    sl_delta_data_plot = sl_delta_data.iloc[::N].copy()
+    if len(sl_delta_data_plot) > window:
+        sl_delta_data_plot['smooth_delta'] = sl_delta_data_plot['implicit_sl_delta'].rolling(window, min_periods=1).mean()
+        sns.lineplot(data=sl_delta_data_plot, x='Step', y='smooth_delta', ax=ax_delta, color='blue', label="Speed Δ (smoothed)")
+    else:
+        sns.lineplot(data=sl_delta_data_plot, x='Step', y='implicit_sl_delta', ax=ax_delta, color='blue', label="Speed Δ (driving)")
+
+    model_ts_plot = model_ts
+    sns.lineplot(x=model_ts_plot['Step'], y=model_ts_plot['volume'], ax=ax_delta2, color='red', label="Vehicle Volume")
+    ax_delta2.fill_between(model_ts_plot['Step'], model_ts_plot['volume'], color='red', alpha=0.3)
+
+    ax_delta.legend(loc='upper left')
+    ax_delta2.legend(loc='upper right')
+    ax_delta.set_title("Implicit Speed Δ vs. Vehicle Volume")
+
+    # --- Highlight rectangle ---
+    y_min, y_max = ax_delta.get_ylim()
+    highlight_rect = Rectangle((0, y_min), highlight_width, y_max - y_min, color='orange', alpha=0.2)
+    ax_delta.add_patch(highlight_rect)
+
+    def init():
+        scat_all.set_offsets(np.empty((0, 2)))
+        scat_watch.set_offsets(np.empty((0, 2)))
+        highlight_rect.set_xy((0, y_min))
+        return scat_all, scat_watch, highlight_rect
+
+    def update(frame):
+        # Animation plot
+        step_df = vehicles_full[vehicles_full["Step"] == frame]
+        if watch is not None:
+            step_df_watch = step_df[step_df["AgentID"] == watch]
+            step_df_other = step_df[step_df["AgentID"] != watch]
+        else:
+            step_df_watch = step_df[step_df["AgentID"] == -1]
+            step_df_other = step_df
+
+        colors = step_df_other["status"].map({
+            "driving": "grey",
+            "crash": "red",
+            "slowing": "yellow",
+            "canyon_closure": "blue"
+        }).fillna("gray")
+        scat_all.set_offsets(step_df_other[['x', 'y']].values)
+        scat_all.set_color(colors.values)
+        if step_df_watch is not None and not step_df_watch.empty:
+            scat_watch.set_offsets(step_df_watch[['x', 'y']].values)
+            wx, wy = step_df_watch.iloc[0][['x', 'y']]
+            tot_x_dist = max(x_road) - min(x_road)
+            window_anim = tot_x_dist/2/zoom 
+            ax_anim.set_xlim(wx - window_anim, wx + window_anim)
+            ax_anim.set_ylim(wy - window_anim, wy + window_anim)
+        else:
+            scat_watch.set_offsets(np.empty((0, 2)))
+        ax_anim.set_title(f"Step {frame}", fontsize=14)
+
+        # Move highlight rectangle
+        rect_x = frame - highlight_width // 2
+        # Clamp to plot limits
+        rect_x = max(rect_x, sl_delta_data_plot['Step'].min())
+        rect_x = min(rect_x, sl_delta_data_plot['Step'].max() - highlight_width)
+        highlight_rect.set_xy((rect_x, y_min))
+
+        return scat_all, scat_watch, highlight_rect
+
+    anim = FuncAnimation(fig, update, frames=steps, init_func=init, blit=False, interval=interval)
+    plt.close()
+    return HTML(anim.to_jshtml())
