@@ -8,19 +8,16 @@ import pandas as pd
 from tqdm import tqdm
 
 # Import my agents
-from agents import VehicleAgent, BlockerAgent, BusAgent, CarAgent, RoadSegmentAgent
+from traffic.agents import VehicleAgent, BlockerAgent, BusAgent, CarAgent, RoadSegmentAgent
 
 # import my utils
-from utils import unit_conversion_utils as uc  # for get_mph, etc.
+from traffic.utils import unit_conversion_utils as uc  # for get_mph, etc.
 
 # import other parts of model
-import model.reporting as rep
-import model.generate as gen 
-import model.init_helpers as ih 
+import traffic.model.reporting as rep
+import traffic.model.generate as gen 
+import traffic.model.init_helpers as ih 
 
-
-#from model.reporting import agent_reporters, model_reporters
-#from model.generate import generate_new_bus, generate_person
 
 class TrafficModel(Model):
     """Mesa model simulating traffic on the canyon road with a car cap."""

@@ -1,4 +1,4 @@
-from agents.vehicle_agent import VehicleAgent, build_empirical_accel_function
+from traffic.agents.vehicle_agent import VehicleAgent, build_empirical_accel_function
 import numpy as np 
 
         

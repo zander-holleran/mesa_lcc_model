@@ -1,5 +1,5 @@
 from mesa import Agent
-from agents.vehicle_agent import VehicleAgent
+from traffic.agents.vehicle_agent import VehicleAgent
 
 class BlockerAgent(Agent):
     """Represents a segment of the road. Only one car can occupy it at a time."""

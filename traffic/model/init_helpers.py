@@ -1,4 +1,4 @@
-from agents.road_segment_agent import RoadSegmentAgent
+from traffic.agents.road_segment_agent import RoadSegmentAgent
  
 def init_road_segments(model, road_gdf):
 

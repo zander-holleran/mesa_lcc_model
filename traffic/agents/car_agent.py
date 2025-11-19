@@ -1,5 +1,5 @@
-from agents.vehicle_agent import VehicleAgent, build_empirical_accel_function
-import utils.distribution_utils as du
+from traffic.agents.vehicle_agent import VehicleAgent, build_empirical_accel_function
+import traffic.utils.distribution_utils as du
 import numpy as np 
 
 class CarAgent(VehicleAgent):

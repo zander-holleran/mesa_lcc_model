@@ -1,8 +1,8 @@
 from mesa.datacollection import DataCollector
 import numpy as np
-from agents import VehicleAgent
+from traffic.agents import VehicleAgent
 from collections import defaultdict
-import utils.unit_conversion_utils as uc
+import traffic.utils.unit_conversion_utils as uc
 
 
 def get_average_time_to_top(model):

@@ -2,9 +2,8 @@ from mesa import Agent
 import numpy as np
 from scipy.stats import skewnorm
 
-# from agents import RoadSegmentAgent
-# from agents import BlockerAgent
-import utils.unit_conversion_utils as uc
+
+import traffic.utils.unit_conversion_utils as uc
 
 # this has to be externial to VehicleAgent because each VehicleAgent gets one accel() function build_empirical_accel_function produces an accel(). 
 # it would not work if VehicleAgent got build_empirical_accel_function
