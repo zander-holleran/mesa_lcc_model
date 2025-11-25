@@ -36,24 +36,70 @@ def generate_new_bus(model):
             model.bus_riders += model.at_bus_stop 
             model.at_bus_stop = 0 
 
-def generate_person(model):
-        if model.person_counter >= model.max_persons: # dont generate people if you hit the limit
-            return             
-        if model.random.random() < model.p_generate:
-            too_close(model)
-            # congrats you made a person
-            # now determine if that person goes to the bus stop or in a car
-            if (model.random.random() < model.car_preference) or (model.at_bus_stop >= model.bus_capacity):
-                new_car = model.agent_cls['car'].create_agents(model=model, n=1)
-                model.agents.add(*new_car) 
-                model.vehicles_list.append(new_car[0])
 
-                # this person got in a car
-                model.person_counter += 1
-                model.car_counter += 1 
-            else:
-                # if the person ends up going to the bus stop they will not be counted until the bus leaves
-                model.at_bus_stop+=1 
+def generate_person(model):
+    # Stop if we've hit the per-day person limit
+    if model.person_counter >= model.max_persons:
+        return
+
+    # Bernoulli check for arrival this step
+    if model.random.random() >= model.p_generate:
+        return
+
+    too_close(model)  # keep your existing spacing check
+
+    # --- CASE 1: Season population provided ---
+    if model.persons is not None:
+        # No one left in the pool for today
+        if not model.person_pool:
+            return
+
+        # Draw a person index without replacement
+        idx = model.random.randrange(len(model.person_pool))
+        person_index = model.person_pool.pop(idx)
+        person_data = model.persons[person_index]
+
+        # Create a PersonAgent with this data
+        new_person = model.agent_cls['person'].create_agents(
+            model=model,
+            n=1,
+            person_data=person_data,
+        )[0]
+        model.agents.add(new_person)
+
+        # Let PersonAgent decide mode using current tolls
+        # (for now assume model has simple attributes for these)
+        day = getattr(model, "current_day", 0)
+        toll_car = getattr(model, "current_toll_car", 0.0)
+        toll_bus = getattr(model, "current_toll_bus", 0.0)
+
+        take_car = new_person.decide_mode(day=day, toll_car=toll_car, toll_bus=toll_bus)
+
+        # Car vs bus logic stays here, so PersonAgent only decides mode
+        if take_car or (model.at_bus_stop >= model.bus_capacity):
+            new_car = model.agent_cls['car'].create_agents(model=model, n=1)
+            model.agents.add(*new_car)
+            model.vehicles_list.append(new_car[0])
+
+            model.person_counter += 1
+            model.car_counter += 1
+        else:
+            model.at_bus_stop += 1
+
+    # --- CASE 2: No Season population (old behavior) ---
+    else:
+        if (model.random.random() < model.car_preference) or (model.at_bus_stop >= model.bus_capacity):
+            new_car = model.agent_cls['car'].create_agents(model=model, n=1)
+            model.agents.add(*new_car)
+            model.vehicles_list.append(new_car[0])
+
+            # this person got in a car
+            model.person_counter += 1
+            model.car_counter += 1
+        else:
+            # if the person ends up going to the bus stop they will not be counted until the bus leaves
+            model.at_bus_stop += 1
+
 
 
 def generate_blocker(model, blocker_type, self_distruct_timer, road_segment):
@@ -105,3 +151,33 @@ def generate_canyon_closure(model):
                 model.canyon_closures = model.canyon_closures.iloc[1:].reset_index(drop=True)
         
 
+#### The following are being saved for potential future use ####
+# def generate_person(model):
+#     if model.person_counter >= model.max_persons:
+#         return
+
+#     if not model.person_pool:   # no one left to potentially travel today
+#         return
+
+#     if model.random.random() < model.p_generate:
+#         too_close(model)
+
+#         # pick a person from the remaining pool, without replacement
+#         idx = model.random.randrange(len(model.person_pool))
+#         person_index = model.person_pool.pop(idx)
+#         person_data = model.persons[person_index]
+
+#         # create a PersonAgent linked to this person_data
+#         new_person = model.agent_cls['person'].create_agents(
+#             model=model,
+#             n=1,
+#             # pass whatever you need from person_data (VOT, λs, priors, ID, etc.)
+#             person_data=person_data,
+#         )[0]
+
+#         model.agents.add(new_person)
+
+#         # let the PersonAgent decide car vs bus using current tolls
+#         new_person.make_mode_decision()
+
+#         model.person_counter += 1

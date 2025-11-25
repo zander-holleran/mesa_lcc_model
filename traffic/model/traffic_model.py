@@ -8,7 +8,7 @@ import pandas as pd
 from tqdm import tqdm
 
 # Import my agents
-from traffic.agents import VehicleAgent, BlockerAgent, BusAgent, CarAgent, RoadSegmentAgent
+from traffic.agents import VehicleAgent, BlockerAgent, BusAgent, CarAgent, RoadSegmentAgent, TrafficPersonAgent
 
 # import my utils
 from traffic.utils import unit_conversion_utils as uc  # for get_mph, etc.
@@ -22,7 +22,7 @@ import traffic.model.init_helpers as ih
 class TrafficModel(Model):
     """Mesa model simulating traffic on the canyon road with a car cap."""
 
-    def __init__(self, road_gdf, ecs_df, max_steps=50000, seed=123, batchrun=False, collect_every_n=1, 
+    def __init__(self, road_gdf, ecs_df, season_persons=None, max_steps=50000, seed=123, batchrun=False, collect_every_n=1, 
                  start_hr=5, traffic_percentile=None, p_generate=None, max_persons=50,
                  canyon_closures={},
                  bus_interval=30, car_preference=1, bus_capacity=30, 
@@ -36,7 +36,17 @@ class TrafficModel(Model):
             'car': CarAgent,
             "bus": BusAgent,
             "road": RoadSegmentAgent,
+            "person": TrafficPersonAgent
         }
+        
+        # If we got a population from Season, make a pool for this day
+        self.persons = season_persons   
+
+        if self.persons is not None:
+            self.person_pool = list(range(len(self.persons)))  # indices into self.persons
+        else:
+            self.person_pool = None
+
         #model perams
         self.expected_counts_seconds = ecs_df
         self.max_steps = max_steps
@@ -47,13 +57,19 @@ class TrafficModel(Model):
 
         # car centric perams
         self.start_step = uc.sec_after_five(start_hr)
+
+        print(f'start step {self.start_step}')
+
         self.traffic_percentile = traffic_percentile
         self.p_generate = p_generate  # Probability of new car each step
         self.max_persons = max_persons  # Maximum number of persons allowed
 
         # canyon closure perams
-        self.canyon_closures = pd.DataFrame(canyon_closures).sort_values('closure_step').reset_index(drop=True)
-        
+        if not canyon_closures or len(canyon_closures) == 0:
+            self.canyon_closures = pd.DataFrame([]) 
+        else:
+            self.canyon_closures = pd.DataFrame(canyon_closures).sort_values('closure_step').reset_index(drop=True)
+            
         # bus centric perams
         self.bus_interval = bus_interval
         if self.bus_interval == 0: 
@@ -107,13 +123,13 @@ class TrafficModel(Model):
     def model_stop_process(self):
         # add agent summary data to the datacollector
         if not self.batchrun:
-            self.datacollector.model_vars["FinishedAgentsSummary"][-1] = self.finished_agents
+            self.datacollector.model_vars["FinishedAgentsSummary"].append(self.finished_agents)
         self.running = False
     
-    def max_persons_check(self):
+    def max_persons_check(self, all_vehicles):
     # Stop model when all generated Vehiclea have been removed
         if self.person_counter == self.max_persons:
-            if len(self.active_vehicles) == 0:
+            if len(all_vehicles) == 0:
                 print(f"{self.person_counter} people generated stopping model.")
                 self.model_stop_process()
     
@@ -205,7 +221,6 @@ class TrafficModel(Model):
         driving_vehicles.do("move_along_path")
 
         # Blocker actions
-        #active_vehicles = self.agents.select(agent_type=VehicleAgent)
         self.crashes, self.remainder = self.should_crash_randomized_rounding(
             crashes_per_100k_vmt=self.crashes_per_100k_vmt,
             num_cars=len(driving_vehicles),
@@ -229,7 +244,7 @@ class TrafficModel(Model):
         self.agents.select(agent_type=RoadSegmentAgent).do("clear_vehicles")
             
         self.max_steps_check()
-        self.max_persons_check()
+        self.max_persons_check(all_vehicles=all_vehicles)
 
     def run_model(self):
         for _ in tqdm(range(self.max_steps), desc="Simulating", unit="step"):
