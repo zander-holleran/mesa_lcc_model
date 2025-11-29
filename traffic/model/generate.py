@@ -8,102 +8,132 @@ def too_close(model):
         model.too_close_counter += 1
 
 def generate_new_bus(model):
-        """
-        Generate a new bus:
-        - First bus is generated at a random step (0–15 mins).
-        - Then follow a fixed interval based on bus_interval (in minutes).
-       # - Never exceed max_buses on the road.
-        """
+        # 1. Early exit conditions
         if model.bus_interval == 0: 
             return 
     
-        if model.person_counter >= model.max_persons:  
+        if model.person_counter >= model.max_persons and not model.at_bus_stop:  
+            return
+        
+        current_step = model.steps
+        steps_per_interval = model.bus_interval * 60  # convert minutes to steps (1 step = 1 sec)
+        
+        if current_step < model.next_bus_step:
             return
  
-        current_step = model.steps
-        steps_per_interval = model.bus_interval * 60
     
-        # First departure check
-        if current_step < model.bus_first_departure:
-            return  # Still waiting for the randomized first departure dont send a bus 
-        elif (current_step - model.bus_first_departure) % steps_per_interval == 0:  # this triggers after first departure and only on the bus interval step
-            too_close(model)
-            new_bus = model.agent_cls['bus'].create_agents(model=model, n=1)
-            model.agents.add(*new_bus)
-            model.vehicles_list.append(new_bus[0])
-            model.bus_counter += 1
-            model.person_counter += model.at_bus_stop
-            model.bus_riders += model.at_bus_stop 
-            model.at_bus_stop = 0 
+        # 2. Generate the bus
+        too_close(model)
+        new_bus = model.agent_cls['bus'].create_agents(model=model, n=1)
+        model.agents.add(*new_bus)
+        model.vehicles_list.append(new_bus[0])
+
+        # FCFS boarding from the single queue
+        capacity = model.bus_capacity
+        n_board = min(capacity, len(model.at_bus_stop))
+
+        boarding_passengers = model.at_bus_stop[:n_board]
+        model.at_bus_stop = model.at_bus_stop[n_board:]     # remove them from the queue
+
+        # link each passenger <-> bus
+        for tp in boarding_passengers:
+            tp.board_step = model.steps
+            tp.vehicle = new_bus
+            new_bus.passengers.append(tp)
+
+        # increment counters
+        model.bus_counter += 1
+        model.bus_riders += n_board
+        model.next_bus_step += steps_per_interval
+
+def pick_season_person_for_trip(model):
+    """
+    Return the next SeasonPerson in the precomputed draw order,
+    or None if everyone has been used this day.
+    """
+    if model.person_draw_pointer >= len(model.person_draw_order):
+        return None
+
+    idx = model.person_draw_order[model.person_draw_pointer]
+    model.person_draw_pointer += 1
+
+    return model.season_persons[idx]
 
 
 def generate_person(model):
-    # Stop if we've hit the per-day person limit
-    if model.person_counter >= model.max_persons:
-        return
+    """
+    Generate a person + vehicle or an empty car, depending on:
+    - per-step Bernoulli arrival (p_generate)
+    - person capacity (max_persons)
+    - whether there are bus riders waiting at the stop
+    """
 
-    # Bernoulli check for arrival this step
+    # 0. Bernoulli check for a potential arrival this step
     if model.random.random() >= model.p_generate:
         return
 
-    too_close(model)  # keep your existing spacing check
-
-    # --- CASE 1: Season population provided ---
-    if model.persons is not None:
-        # No one left in the pool for today
-        if not model.person_pool:
+    # 1. If we've hit the per-day person limit...
+    if model.person_counter >= model.max_persons:
+        # 1a. ...and no one is waiting for the bus, nothing to do
+        if not model.at_bus_stop:
             return
 
-        # Draw a person index without replacement
-        idx = model.random.randrange(len(model.person_pool))
-        person_index = model.person_pool.pop(idx)
-        person_data = model.persons[person_index]
+        # 1b. ...but there ARE bus riders waiting:
+        #      generate an EMPTY CAR to maintain traffic conditions
+        too_close(model) 
 
-        # Create a PersonAgent with this data
-        new_person = model.agent_cls['person'].create_agents(
+        new_car = model.agent_cls['car'].create_agents(
             model=model,
             n=1,
-            person_data=person_data,
         )[0]
-        model.agents.add(new_person)
+        model.agents.add(new_car)
+        model.vehicles_list.append(new_car)
 
-        # Let PersonAgent decide mode using current tolls
-        # (for now assume model has simple attributes for these)
-        day = getattr(model, "current_day", 0)
-        toll_car = getattr(model, "current_toll_car", 0.0)
-        toll_bus = getattr(model, "current_toll_bus", 0.0)
+        # empty car: no passengers to link
+        model.car_counter += 1
+        return  
 
-        take_car = new_person.decide_mode(day=day, toll_car=toll_car, toll_bus=toll_bus)
+    # 2. Normal case: below max_persons → generate a SeasonPerson-based traveler
+    season_person = pick_season_person_for_trip(model)
+    if season_person is None:
+        return
 
-        # Car vs bus logic stays here, so PersonAgent only decides mode
-        if take_car or (model.at_bus_stop >= model.bus_capacity):
-            new_car = model.agent_cls['car'].create_agents(model=model, n=1)
-            model.agents.add(*new_car)
-            model.vehicles_list.append(new_car[0])
+    new_tp = model.agent_cls['traffic_person'].create_agents(
+        model=model,
+        n=1,
+        season_person=season_person,
+    )[0]
 
-            model.person_counter += 1
-            model.car_counter += 1
-        else:
-            model.at_bus_stop += 1
+  
+    model.agents.add(new_tp)
+    new_tp.created_step = model.steps
+    
 
-    # --- CASE 2: No Season population (old behavior) ---
+    # 3. Route based on chosen mode
+    if new_tp.mode == "car":
+        too_close(model)
+
+        new_car = model.agent_cls['car'].create_agents(
+            model=model,
+            n=1,
+        )[0]
+        model.agents.add(new_car)
+        model.vehicles_list.append(new_car)
+
+        # double link: person <-> car
+        new_tp.vehicle = new_car
+        new_car.passengers.append(new_tp)
+
+        model.person_counter += 1
+        model.car_counter += 1
+
     else:
-        if (model.random.random() < model.car_preference) or (model.at_bus_stop >= model.bus_capacity):
-            new_car = model.agent_cls['car'].create_agents(model=model, n=1)
-            model.agents.add(*new_car)
-            model.vehicles_list.append(new_car[0])
-
-            # this person got in a car
-            model.person_counter += 1
-            model.car_counter += 1
-        else:
-            # if the person ends up going to the bus stop they will not be counted until the bus leaves
-            model.at_bus_stop += 1
-
-
+        # BUS CASE: add person to global bus-stop queue
+        model.at_bus_stop.append(new_tp)
+        model.person_counter += 1
 
 def generate_blocker(model, blocker_type, self_distruct_timer, road_segment):
-        print(f"{blocker_type} at step {model.steps} on segment {road_segment.pos}")
+       # print(f"{blocker_type} at step {model.steps} on segment {road_segment.pos}")
         new_blocker = model.agent_cls['blocker'].create_agents(model=model, n=1, blocker_type=blocker_type, self_distruct_timer=self_distruct_timer, road_segment=road_segment)
         model.agents.add(*new_blocker)
         model.blockers_list.append(new_blocker[0])
@@ -123,8 +153,8 @@ def generate_crash(model):
     segment = model.random.choice(list(occupied_segments)) if len(occupied_segments) else None
     if segment:
         generate_blocker(model=model, blocker_type="crash", self_distruct_timer=model.random.randint(60, 300), road_segment=segment) # this is where blocker duration is set, currently between 1 and 5 mins
-    else:
-        print(f"No occupied segments available for crash at step {model.steps}.")
+    #else:
+        #print(f"No occupied segments available for crash at step {model.steps}.")
 
 def generate_canyon_closure(model):
     if len(model.canyon_closures) == 0:

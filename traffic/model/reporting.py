@@ -117,8 +117,8 @@ model_reporters = {
     "bus_counter": lambda m: m.bus_counter,
     "car_counter": lambda m: m.car_counter,
     "bus_riders": lambda m: m.bus_riders,
-    "volume_by_section": report_volume_by_section,
-    'speed_by_section':report_avg_speed_by_section
+    # "volume_by_section": report_volume_by_section,
+    # 'speed_by_section':report_avg_speed_by_section
 
 
 }

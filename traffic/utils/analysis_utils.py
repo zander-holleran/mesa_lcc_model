@@ -188,7 +188,7 @@ def model_data_time_series(model):
             if section in section_miles_dict and section_miles_dict[section] > 0
         }
     
-    model_df["density_by_section"] = model_df["volume_by_section"].apply(calc_density)
+    #model_df["density_by_section"] = model_df["volume_by_section"].apply(calc_density)
     return model_df
  
 

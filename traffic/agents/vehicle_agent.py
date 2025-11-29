@@ -113,6 +113,9 @@ class VehicleAgent(Agent):
         self.performance = .5
         self.accel_curve = build_empirical_accel_function(self.performance)
 
+        # passengers list
+        self.passengers = []
+
 
     def get_next_agent(self): 
         '''
@@ -215,7 +218,6 @@ class VehicleAgent(Agent):
             # this should never be triggered but i added anyway to make sure it didnt trip an error
             return 0
         mph_over = uc.get_mph(speed)-uc.get_mph(speed_limit) 
-        #print(mph_over)
         if mph_over > 7: 
             return 1.1 
         elif mph_over > 2:
@@ -306,7 +308,35 @@ class VehicleAgent(Agent):
             # Add more if needed
         })
 
-        
+        end_step = self.model.steps
+
+        for tp in getattr(self, "passengers", []):
+            created = getattr(tp, "created_step", end_step)
+
+            if tp.mode == "bus":
+                board = getattr(tp, "board_step", end_step)
+                wait_steps = max(0, board - created)
+                onboard_steps = max(0, end_step - board)
+            else:
+                # car: no waiting at stop
+                wait_steps = 0
+                onboard_steps = max(0, end_step - created)
+
+            wait_time = wait_steps / 60
+            onboard_time = onboard_steps / 60
+            total_tt = wait_time + onboard_time
+
+            trip_summary = {
+                "wait_time": wait_time,
+                "onboard_time": onboard_time,
+                "total_travel_time": total_tt,
+                "end_step": end_step,
+                # add more later here: e.g. "avg_speed", "hit_closure", etc.
+            }
+            # call the trip completed hook on the person
+            tp.on_trip_completed(trip_summary)
+
+        # remove self from various model lists
         try: self._rs[self.path_index].vehicles_here.remove(self)       # remove from road segment
         except Exception: pass
         try: self.model.space.remove_agent(self)                        # remove from agent set

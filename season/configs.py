@@ -1,7 +1,74 @@
 from dataclasses import dataclass, field
 from typing import Optional, Literal, Dict, Any, List, Callable
 import numpy as np
+from season.persons import SeasonPerson
+from scipy.stats import lognorm, skewnorm, norm
 
+# ===================== The following are imputs to SeasonConfig ====================== #
+@dataclass
+class PopulationParams:
+    population_size: int = 500
+
+    # each of these can be a scalar or a frozen scipy dist
+    value_of_time: Any = lognorm(s=0.64 , scale=(40/60) ) # $/minute
+    experience_weight_car: Any = 1.0
+    experience_weight_bus: Any = skewnorm(6, loc=1.15, scale=0.3)
+
+    prior_car: Any = 22.0
+    prior_bus: Any = 60.0
+
+    time_decay_rate: Any = 0.1
+    prior_weight: Any = 1.0
+    uncertainty_multiplier: Any = 1.0
+    travel_propensity: Any = 1.0
+
+    def _draw_field(self, spec, rng: np.random.Generator, n: int):
+        """If spec has .rvs, draw n samples; else repeat scalar n times."""
+        if hasattr(spec, "rvs"):
+            draws = spec.rvs(size=n, random_state=rng)
+            return list(draws)
+        else:
+            return [spec] * n
+
+    def create_season_persons(self, season_id: str, seed: Optional[int] = None) -> List[SeasonPerson]:
+        """
+        Generate a list of SeasonPerson objects according to this population spec.
+        """
+        rng = np.random.default_rng(seed)
+
+        n = self.population_size
+
+        vots = self._draw_field(self.value_of_time, rng, n)
+        w_car = self._draw_field(self.experience_weight_car, rng, n)
+        w_bus = self._draw_field(self.experience_weight_bus, rng, n)
+
+        prior_car_vals = self._draw_field(self.prior_car, rng, n)
+        prior_bus_vals = self._draw_field(self.prior_bus, rng, n)
+
+        t_decay = self._draw_field(self.time_decay_rate, rng, n)
+        p_weight = self._draw_field(self.prior_weight, rng, n)
+        u_mult = self._draw_field(self.uncertainty_multiplier, rng, n)
+        travel_prop = self._draw_field(self.travel_propensity, rng, n)
+
+        persons: List[SeasonPerson] = []
+
+        for i in range(n):
+            persons.append(
+                SeasonPerson(
+                    person_id=i,
+                    season_id=season_id,
+                    value_of_time=float(vots[i]),
+                    experience_weight_car=float(w_car[i]),
+                    experience_weight_bus=float(w_bus[i]),
+                    prior_car=float(prior_car_vals[i]),
+                    prior_bus=float(prior_bus_vals[i]),
+                    time_decay_rate=float(t_decay[i]),
+                    prior_weight=float(p_weight[i]),
+                    uncertainty_multiplier=float(u_mult[i]),
+                    travel_propensity=float(travel_prop[i])
+                )
+            )
+        return persons
 
 @dataclass
 class DayParams:
@@ -22,6 +89,29 @@ class DayParams:
             crashes_per_100k_vmt_input=self.crashes_per_100k_vmt_input,
         )
 
+
+ScheduleMode = Literal["static", "dist"] # makes it such that ScheduleSpecs only accepts these two strings as mode
+
+@dataclass
+class ScheduleSpecs:
+    mode: ScheduleMode
+    value:Optional[int] = None       # used when mode == "static"
+    dist: Optional[Any] = None        # used when mode == "dist" (e.g. scipy.stats.norm)
+    round_to_int: bool = True              # whether to round the draws to integers
+
+    def realize(self, rng: np.random.Generator, n_days: int):
+        if self.mode == "static":
+            return [self.value] * n_days
+
+        # happy path: mode == "dist", dist is a scipy frozen dist with .rvs
+        draws = self.dist.rvs(size=n_days, random_state=rng)
+        if self.round_to_int:
+            rounded = np.round(draws).astype(int)
+        return list(rounded)
+
+
+#===================== Data Classes used by  make_season_config ====================== #
+# SeasonConfig is the main config object for a Season run - it is the output of make_season_config
 @dataclass
 class SeasonConfig:
     season_id: str
@@ -46,30 +136,13 @@ class SeasonConfig:
 
     # the actual per-day parameters
     day_params: List[DayParams] = field(default_factory=list)
+    
+    # population parameters
+    population_params: PopulationParams = field(default_factory=PopulationParams)
 
 
-
-ScheduleMode = Literal["static", "dist"] # makes it such that ScheduleSpecs only accepts these two strings as mode
-
-@dataclass
-class ScheduleSpecs:
-    mode: ScheduleMode
-    value:Optional[int] = None       # used when mode == "static"
-    dist: Optional[Any] = None        # used when mode == "dist" (e.g. scipy.stats.norm)
-    round_to_int: bool = True              # whether to round the draws to integers
-
-    def realize(self, rng: np.random.Generator, n_days: int):
-        if self.mode == "static":
-            return [self.value] * n_days
-
-        # happy path: mode == "dist", dist is a scipy frozen dist with .rvs
-        draws = self.dist.rvs(size=n_days, random_state=rng)
-        if self.round_to_int:
-            rounded = np.round(draws).astype(int)
-        return list(rounded)
-
-
-
+# ====================== Factory function to create SeasonConfig objects ====================== #
+# This is the final user-facing function. It creates a SeasonConfig object from high-level specs.
 def make_season_config(
     *,
     season_id: str,
@@ -96,6 +169,9 @@ def make_season_config(
     # toll mechanism
     toll_mechanism: Optional[str] = None,
     toll_params: Optional[Dict[str, Any]] = {"car": 0.0, "bus": 0.0},
+
+    population_params: PopulationParams = None,
+
 ) -> SeasonConfig:
     rng = np.random.default_rng(seed)
 
@@ -120,8 +196,6 @@ def make_season_config(
             )
         )
 
-
-
     return SeasonConfig(
         # season-level settings 
         season_id=season_id,
@@ -138,13 +212,7 @@ def make_season_config(
         toll_mechanism=toll_mechanism,
         toll_params=toll_params or {},
         # per-day parameters sent to TrafficModel
-        day_params=day_params
+        day_params=day_params,
+        population_params=population_params
     )
-
-
-
-
-
-
-
 

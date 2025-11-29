@@ -22,13 +22,18 @@ import traffic.model.init_helpers as ih
 class TrafficModel(Model):
     """Mesa model simulating traffic on the canyon road with a car cap."""
 
-    def __init__(self, road_gdf, ecs_df, season_persons=None, max_steps=50000, seed=123, batchrun=False, collect_every_n=1, 
+    def __init__(self, road_gdf, ecs_df, max_steps=50000, seed=123, batchrun=False, collect_every_n=1, 
                  start_hr=5, traffic_percentile=None, p_generate=None, max_persons=50,
                  canyon_closures={},
                  bus_interval=30, car_preference=1, bus_capacity=30, 
-                 crashes_per_100k_vmt_input=22
+                 crashes_per_100k_vmt_input=4,
+                 toll_mechanism="static", toll_params=None,
+                 season_persons=None,
+                 current_day = 0
                  ):
         super().__init__(seed=seed)
+
+        self._np_rng = np.random.default_rng(seed)
 
         self.agent_cls = {
             "vehicle": VehicleAgent,
@@ -36,18 +41,38 @@ class TrafficModel(Model):
             'car': CarAgent,
             "bus": BusAgent,
             "road": RoadSegmentAgent,
-            "person": TrafficPersonAgent
+            "traffic_person": TrafficPersonAgent
         }
         
-        # If we got a population from Season, make a pool for this day
-        self.persons = season_persons   
+        # --- SeasonPersons wiring ---
+        self.season_persons = season_persons or []
 
-        if self.persons is not None:
-            self.person_pool = list(range(len(self.persons)))  # indices into self.persons
+
+         # base weights from travel_propensity
+        self.person_weights = np.array(
+            [p.travel_propensity for p in self.season_persons],
+            dtype=float,
+        )
+      
+        if len(self.person_weights) > 0:
+            probs = self.person_weights / self.person_weights.sum()
+            # precompute a full random ordering of person indices for THIS day
+            self.person_draw_order = self._np_rng.choice(
+                len(self.season_persons),
+                size=len(self.season_persons),
+                replace=False,
+                p=probs,
+            )
         else:
-            self.person_pool = None
+            self.person_draw_order = np.array([], dtype=int)
 
-        #model perams
+        # pointer into the draw order
+        self.person_draw_pointer = 0
+
+
+
+        #===== model perams =====
+        self.current_day = current_day
         self.expected_counts_seconds = ecs_df
         self.max_steps = max_steps
         self.batchrun = batchrun
@@ -55,46 +80,50 @@ class TrafficModel(Model):
         self.initial_start_point = tuple(road_gdf.iloc[0].geometry.coords[0])  # never changes
         self.start_point = tuple(road_gdf.iloc[0].geometry.coords[0])          # may be moved by "too_close" logic
 
-        # car centric perams
+        # ===== Tolling perams =====
+        self.toll_mechanism = toll_mechanism
+        self.toll_params = toll_params or {}
+        self.current_toll_car = self.toll_params.get("car", 0.0)
+        self.current_toll_bus = self.toll_params.get("bus", 0.0)
+
+        # ===== car centric perams =====
         self.start_step = uc.sec_after_five(start_hr)
-
-        print(f'start step {self.start_step}')
-
         self.traffic_percentile = traffic_percentile
         self.p_generate = p_generate  # Probability of new car each step
         self.max_persons = max_persons  # Maximum number of persons allowed
 
-        # canyon closure perams
+        # ===== canyon closure perams =====
         if not canyon_closures or len(canyon_closures) == 0:
             self.canyon_closures = pd.DataFrame([]) 
         else:
             self.canyon_closures = pd.DataFrame(canyon_closures).sort_values('closure_step').reset_index(drop=True)
             
-        # bus centric perams
+        # ===== bus centric perams =====
         self.bus_interval = bus_interval
         if self.bus_interval == 0: 
             self.car_preference = 1 
         else: 
             self.car_preference = car_preference
         self.bus_capacity = bus_capacity
-        self.bus_first_departure = self.random.randint(0, 5 * 60)  # Random step between 0 and 5 mins
+        self.bus_first_departure = self.random.randint(0, self.bus_interval * 60)  # Random step between 0 and 5 mins
+        self.next_bus_step = self.bus_first_departure
         
-        # crash perams
+        # ===== crash perams =====
         self.crashes_per_100k_vmt = crashes_per_100k_vmt_input
         self.remainder = 0 
         self.crashes = 0
         self.total_crashes = 0
 
-        # verious trackers
+        # ===== verious trackers =====
         self.too_close_counter = 0 
         self.person_counter = 0 
         self.bus_counter = 0 
         self.car_counter = 0 
         self.bus_riders = 0 
-        self.at_bus_stop = 0 
+        self.at_bus_stop = []
         self.finished_agents = []
 
-        # Set up ContinuousSpace
+        # ===== Set up ContinuousSpace =====
         buffer = 10000
         minx, miny, maxx, maxy = road_gdf.total_bounds
         self.space = ContinuousSpace(x_min=minx - buffer, x_max=maxx + buffer, y_min=miny - buffer, y_max=maxy + buffer, torus=False)
@@ -176,6 +205,36 @@ class TrafficModel(Model):
         new_remainder = total - crashes  # keep only the fractional part
         return crashes, new_remainder
     
+    def update_tolls(self):
+        """Compute current tolls based on mechanism + model state."""
+        mech = self.toll_mechanism
+
+        if mech == "static":
+           return # no change
+
+        elif mech == "volume":
+            self._update_tolls_volume()
+    
+    def _update_tolls_volume(self):
+        """
+        Simple volume-based toll calulator: linear increase above a threshold.
+        """
+
+        # these params come from SeasonConfig / DayParams via __init__
+        threshold = self.toll_params.get("volume_threshold", 500)
+        slope = self.toll_params.get("slope", 0.02)          
+        base_price = self.toll_params.get("base_price", 5.0)
+       
+        volume = len(self.vehicles_list)  # current number of vehicles on the road
+
+        if volume <= threshold:
+            car_toll = 0.0
+        else:
+            car_toll = base_price + slope * (volume - threshold)
+        
+        self.current_toll_car = car_toll
+
+
     def update_next_agents(self):
         # 1) Collect candidates once (avoid AgentSet scans inside per-agent code)
         vehicles = list(self.agents.select(agent_type=VehicleAgent))
@@ -197,6 +256,9 @@ class TrafficModel(Model):
     
     # -~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~ THE STEP  -~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
     def step(self):
+        # Toll update
+        self.update_tolls()
+
         # establish what p_generate is going to be for that step
         if self.traffic_percentile:
             self.p_generate = self.expected_counts_seconds.iloc[self.start_step, self.traffic_percentile]
@@ -230,10 +292,10 @@ class TrafficModel(Model):
         )
         self.total_crashes += self.crashes
 
-        # will generate a blocker if crashes > 0, need to 
+        # will generate a blocker if crashes > 0
         gen.generate_crash(self)
         gen.generate_canyon_closure(self)
-        self.agents.select(agent_type=BlockerAgent).do("tick")
+        self.agents.select(agent_type=BlockerAgent).do("tick") # decrement blocker timers
 
         # Collect data
         if (self.steps % self.collect_every_n) == 0:
