@@ -106,13 +106,14 @@ agent_reporters={
 }
 
 model_reporters = {
-    "FinishedAgentsSummary": lambda m: None,  # required for finished agents to work
+   # "FinishedAgentsSummary": lambda m: None,  # required for finished agents to work
     'Step':lambda m: m.steps,
-    "volume": lambda m: len(m.agents) - len(m.road_segments), 
-    "avg_time_to_top": get_average_time_to_top,
-    "avg_car_interactions": get_average_car_interactions,
-    "avg_posted_sl_delta":get_average_speed_relative_to_posted_sl,
-    "avg_implicit_sl_delta":get_average_speed_relative_to_implicit_sl,
+    "current_toll_car": lambda m: m.current_toll_car,
+    "volume": lambda m: len(m.agents.select(agent_type=VehicleAgent)),
+    # "avg_time_to_top": get_average_time_to_top,
+    # "avg_car_interactions": get_average_car_interactions,
+    # "avg_posted_sl_delta":get_average_speed_relative_to_posted_sl,
+    # "avg_implicit_sl_delta":get_average_speed_relative_to_implicit_sl,
     "person_counter": lambda m: m.person_counter,
     "bus_counter": lambda m: m.bus_counter,
     "car_counter": lambda m: m.car_counter,

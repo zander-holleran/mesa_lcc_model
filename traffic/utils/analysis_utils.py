@@ -176,7 +176,7 @@ def vehicle_agent_data_time_series(model, plots=True):
 
 def model_data_time_series(model):   
     model_df = model.datacollector.get_model_vars_dataframe()
-    model_df.drop(columns='FinishedAgentsSummary', inplace=True) # get rid of FinishedAgentsSummary
+
     # create the density col
     
     ## this info here is static from the road processing section 

@@ -24,9 +24,9 @@ def generate_new_bus(model):
     
         # 2. Generate the bus
         too_close(model)
-        new_bus = model.agent_cls['bus'].create_agents(model=model, n=1)
-        model.agents.add(*new_bus)
-        model.vehicles_list.append(new_bus[0])
+        new_bus = model.agent_cls['bus'].create_agents(model=model, n=1)[0]
+        model.agents.add(new_bus)
+        model.vehicles_list.append(new_bus)
 
         # FCFS boarding from the single queue
         capacity = model.bus_capacity
@@ -133,7 +133,7 @@ def generate_person(model):
         model.person_counter += 1
 
 def generate_blocker(model, blocker_type, self_distruct_timer, road_segment):
-       # print(f"{blocker_type} at step {model.steps} on segment {road_segment.pos}")
+        print(f"{blocker_type} at step {model.steps}")
         new_blocker = model.agent_cls['blocker'].create_agents(model=model, n=1, blocker_type=blocker_type, self_distruct_timer=self_distruct_timer, road_segment=road_segment)
         model.agents.add(*new_blocker)
         model.blockers_list.append(new_blocker[0])

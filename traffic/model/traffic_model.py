@@ -83,6 +83,9 @@ class TrafficModel(Model):
         # ===== Tolling perams =====
         self.toll_mechanism = toll_mechanism
         self.toll_params = toll_params or {}
+
+        print(f"Toll mechanism: {self.toll_mechanism} with params {self.toll_params}")
+
         self.current_toll_car = self.toll_params.get("car", 0.0)
         self.current_toll_bus = self.toll_params.get("bus", 0.0)
 
@@ -149,24 +152,18 @@ class TrafficModel(Model):
         self.blockers_list = []
 
     # -~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~ END OF INIT -~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
-    def model_stop_process(self):
-        # add agent summary data to the datacollector
-        if not self.batchrun:
-            self.datacollector.model_vars["FinishedAgentsSummary"].append(self.finished_agents)
-        self.running = False
-    
     def max_persons_check(self, all_vehicles):
     # Stop model when all generated Vehiclea have been removed
         if self.person_counter == self.max_persons:
             if len(all_vehicles) == 0:
                 print(f"{self.person_counter} people generated stopping model.")
-                self.model_stop_process()
+                self.running = False
     
     def max_steps_check(self):
         # Stop model at hard cap of steps
         if self.steps >= self.max_steps:
             print(f"Reached max step count ({self.max_steps}). Stopping model.")
-            self.model_stop_process()
+            self.running = False
 
     def should_crash_randomized_rounding(
         self, 

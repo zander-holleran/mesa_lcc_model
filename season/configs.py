@@ -99,7 +99,7 @@ class ScheduleSpecs:
     dist: Optional[Any] = None        # used when mode == "dist" (e.g. scipy.stats.norm)
     round_to_int: bool = True              # whether to round the draws to integers
 
-    def realize(self, rng: np.random.Generator, n_days: int):
+    def realize(self, rng: np.random.Generator = np.random.default_rng(123), n_days: int=1):
         if self.mode == "static":
             return [self.value] * n_days
 
@@ -107,7 +107,9 @@ class ScheduleSpecs:
         draws = self.dist.rvs(size=n_days, random_state=rng)
         if self.round_to_int:
             rounded = np.round(draws).astype(int)
-        return list(rounded)
+            return list(rounded)
+        else:
+            return list(draws)
 
 
 #===================== Data Classes used by  make_season_config ====================== #
@@ -118,10 +120,12 @@ class SeasonConfig:
     run_description: str
     seed: int
     n_days: int
+    batch_run: bool = True
 
     # TrafficModel season-level args
     max_steps: int = 50000
     max_persons: int = 50
+    collect_every_n: int = 10  
     start_hr: int = 5
     bus_capacity: int = 30
 
@@ -149,10 +153,12 @@ def make_season_config(
     run_description: str,
     seed: int,
     n_days: int,
+    batch_run: bool = True,
 
     # season-level TrafficModel settings
-    max_steps: int = 50000,
+    max_steps: int = 500,
     max_persons: int = 50,
+    collect_every_n: int = 10,
     start_hr: int = 5,
     bus_capacity: int = 30,
 
@@ -163,7 +169,7 @@ def make_season_config(
     # schedules for day-varying TrafficModel args
     traffic_percentile_schedule: ScheduleSpecs = ScheduleSpecs("static", 50),
     bus_interval_schedule: ScheduleSpecs = ScheduleSpecs("static", 30),
-    crashes_schedule: ScheduleSpecs = ScheduleSpecs("static", 4),
+    crashes_schedule: ScheduleSpecs = ScheduleSpecs("static", 0),
     canyon_closures_schedule: Optional[Any] = None,
 
     # toll mechanism
@@ -202,9 +208,11 @@ def make_season_config(
         run_description=run_description,
         seed=seed,
         n_days=n_days,
+        batch_run=batch_run,
         # season level TrafficModel args
         max_steps=max_steps,
         max_persons=max_persons,
+        collect_every_n=collect_every_n,
         start_hr=start_hr,
         bus_capacity=bus_capacity,
         road_path=road_path,
