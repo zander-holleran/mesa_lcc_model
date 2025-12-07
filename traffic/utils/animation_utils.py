@@ -48,6 +48,10 @@ def animate_traffic(cars_full, road_gdf, interval=60, step_skip=1, watch=None, z
     Returns:
     - HTML animation object
     """
+
+    if watch and not watch in cars_full.AgentID.unique():
+        raise ValueError('select a valid agent_id')
+    
     cars_full['x'] = cars_full['pos'].apply(lambda p: p[0])
     cars_full['y'] = cars_full['pos'].apply(lambda p: p[1])
     
@@ -131,7 +135,7 @@ def animate_relative_distance(vehicle_df, agent_id, distance_behind, color_by='d
     - HTML animation object
     """
 
-     # --- column checks ---
+     # --- df and agent_id checks ---
     base_required = {"AgentID", "Step", "distance_traveled", "gap_m", "ideal_gap_m"}
 
     if color_by not in ("status", "driving_action"):
@@ -143,6 +147,9 @@ def animate_relative_distance(vehicle_df, agent_id, distance_behind, color_by='d
     if missing:
         raise ValueError(f"vehicle_df is missing required columns: {missing}")
 
+    if not agent_id in vehicle_df.AgentID.unique():
+        raise ValueError('select a valid agent_id')
+    
     # Filter to only include agents >= agent_id
     vehicle_df = vehicle_df[vehicle_df["AgentID"] >= agent_id].copy()
 
@@ -252,6 +259,9 @@ def animate_traffic_with_speed_delta_highlight(vehicles_full, road_gdf, model_ts
     The speed delta plot is drawn once (with seaborn), and a rectangle highlights a window of steps as the animation progresses.
     """
     import matplotlib.gridspec as gridspec
+
+    if watch and not watch in vehicles_full.AgentID.unique():
+        raise ValueError('select a valid agent_id')
 
     # Prepare vehicle positions
     vehicles_full['x'] = vehicles_full['pos'].apply(lambda p: p[0])
