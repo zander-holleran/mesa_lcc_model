@@ -1,0 +1,12 @@
+# Core dependencies for the Little Cottonwood Canyon traffic model
+mesa>=2.1
+numpy>=1.26
+pandas>=2.1
+scipy>=1.11
+geopandas>=0.14
+shapely>=2.0
+matplotlib>=3.8
+seaborn>=0.13
+plotly>=5.18
+tqdm>=4.66
+ipython>=8.0
