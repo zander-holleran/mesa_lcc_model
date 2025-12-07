@@ -130,6 +130,19 @@ def animate_relative_distance(vehicle_df, agent_id, distance_behind, color_by='d
     Returns:
     - HTML animation object
     """
+
+     # --- column checks ---
+    base_required = {"AgentID", "Step", "distance_traveled", "gap_m", "ideal_gap_m"}
+
+    if color_by not in ("status", "driving_action"):
+        raise ValueError("color_by must be 'status' or 'driving_action'")
+
+    required_cols = base_required | {color_by}
+    missing = [c for c in required_cols if c not in vehicle_df.columns]
+
+    if missing:
+        raise ValueError(f"vehicle_df is missing required columns: {missing}")
+
     # Filter to only include agents >= agent_id
     vehicle_df = vehicle_df[vehicle_df["AgentID"] >= agent_id].copy()
 

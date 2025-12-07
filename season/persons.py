@@ -21,6 +21,7 @@ class SeasonPerson:
 
     # full history of realized experiences
     history: List[Dict[str, Any]] = field(default_factory=list)
+    realized_costs: List[Dict[str, Any]] = field(default_factory=list)
 
     # derived belief summaries for each mode
     expected_tt_car: float = field(init=False)
@@ -133,7 +134,7 @@ class SeasonPerson:
         self.travel_time_uncertainty_bus = unc_bus
 
 
-    def record_experience(self, day_index, mode, realized_tt, **kwargs):
+    def record_experience(self, day_index, mode, realized_tt, toll_paid, cumtime_lost_sec,  **kwargs):
         """
         Append a single trip record to history, update the mode-specific prior
         with this realized travel time.
@@ -145,6 +146,8 @@ class SeasonPerson:
                 "day_index": day_index,
                 "mode": mode,
                 "realized_tt": realized_tt,
+                "toll_paid": toll_paid,
+                "cumtime_lost_sec": cumtime_lost_sec,
                 **kwargs,
             }
         )
@@ -157,3 +160,4 @@ class SeasonPerson:
         else:
             # if you ever introduce more modes, handle them here
             pass
+

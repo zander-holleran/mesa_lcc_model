@@ -33,6 +33,9 @@ class TrafficPersonAgent(Agent):
         self.wait_time = 0.0                          # minutes
         self.onboard_time = 0.0                       # minutes
         self.total_travel_time = 0.0                  # minutes
+
+        self.cumtime_lost_sec = 0.0                   # seconds
+        self.toll_paid = 0.0                          # total toll paid
        
     def compute_generalized_cost(
             self,
@@ -73,7 +76,7 @@ class TrafficPersonAgent(Agent):
             - total_travel_time (minutes)
         and can contain additional metrics later (congestion, stops, etc.).
         """
-        
+        self.status = "arrived"
         # store key metrics on the person
         self.wait_time = trip_summary.get("wait_time", 0.0)
         self.onboard_time = trip_summary.get("onboard_time", 0.0)
@@ -81,6 +84,8 @@ class TrafficPersonAgent(Agent):
             "total_travel_time",
             self.wait_time + self.onboard_time,
         )
+        self.toll_paid = trip_summary.get("toll_paid", 0.0)
+        self.cumtime_lost_sec = trip_summary.get("cumtime_lost_sec", 0.0)
 
         # forward the full summary to SeasonPerson for belief updates / history
         sp = self._season_person_ref
@@ -89,5 +94,7 @@ class TrafficPersonAgent(Agent):
                 day_index=self.model.current_day,
                 mode=self.mode,
                 realized_tt=self.total_travel_time,
-                **trip_summary,   # keeps it extensible
+                toll_paid=self.toll_paid,
+                cumtime_lost_sec=self.cumtime_lost_sec
+                #**trip_summary,   # keeps it extensible
             )

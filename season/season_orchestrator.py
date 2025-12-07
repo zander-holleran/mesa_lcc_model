@@ -81,6 +81,89 @@ class SeasonOrchestrator:
         tm.run_model()
         
         return tm
+    
+    import pandas as pd
+
+
+
+    def run_day_temp(self):
+        """
+        Run a single-day simulation, compute avg cumtime_lost_sec,
+        and append one summary row to results_df.
+
+        results_df is a pandas DataFrame that you pass in.
+        """
+        day_cfg = self.config.day_params[0]
+
+        tm = self._build_model(day_cfg=day_cfg)
+        tm.run_model()
+
+        # --- collect cumtime_lost_sec from all SeasonPersons ---
+        cumtimes = []
+        realized_tts = []
+        n_car = 0
+        n_bus = 0
+
+        for sp in self.season_persons:
+            hist = sp.history  # list of dicts
+            if not hist:
+                continue
+
+            # assume cumtime_lost_sec in the *last* record is the cumulative value
+            last = hist[-1]
+            if "cumtime_lost_sec" in last:
+                cumtimes.append(last["cumtime_lost_sec"])
+            if "realized_tt" in last:
+                realized_tts.append(last["realized_tt"])
+            
+            # mode counts from final record
+            mode = last.get("mode")
+            if mode == "car":
+                n_car += 1
+            elif mode == "bus":
+                n_bus += 1
+
+        if cumtimes:
+            avg_cumtime_lost_sec = sum(cumtimes) / len(cumtimes)
+        else:
+            avg_cumtime_lost_sec = float("nan")
+
+        if realized_tts:
+            avg_realized_tt = sum(realized_tts) / len(realized_tts)
+        else:
+            avg_realized_tt = float("nan")
+
+        # --- pull metadata for this run ---
+        # tweak these attribute names to match your config
+        seed = getattr(self.config, "seed", None)
+        traffic_percentile = getattr(day_cfg, "traffic_percentile", None)
+        bus_interval  = getattr(day_cfg, "bus_interval", None)
+
+        car_toll = self.config.toll_params['car']
+        bus_prior = getattr(self.config.population_params, "prior_bus", None)
+        car_prior = getattr(self.config.population_params, "prior_car", None)
+
+
+
+
+
+
+        row = {
+            "seed": seed,
+            "traffic_percentile": traffic_percentile,
+            "car_toll": car_toll,
+            "avg_realized_tt": avg_realized_tt,
+            "avg_cumtime_lost_sec": avg_cumtime_lost_sec,
+            "bus_interval": bus_interval,
+            "bus_prior": bus_prior,
+            "n_car": n_car,
+            "n_bus": n_bus,
+        }
+
+       
+
+        return row
+
 
 
 

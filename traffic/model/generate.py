@@ -1,7 +1,7 @@
 
 def too_close(model): 
-    vehicles = model.agents.select(agent_type=model.agent_cls['vehicle']
-)
+    vehicles = model.agents.select(agent_type=model.agent_cls['vehicle'])
+
     closeness_threshold = 1 
     if vehicles and model.space.get_distance(vehicles[-1].pos, model.start_point) < closeness_threshold: # check if the last vehicle is withen x m of the start point
         model.start_point = (model.start_point[0], model.start_point[1]+1) # if the car is too close move the start point north
@@ -75,10 +75,14 @@ def generate_person(model):
     # 1. If we've hit the per-day person limit...
     if model.person_counter >= model.max_persons:
         # 1a. ...and no one is waiting for the bus, nothing to do
-        if not model.at_bus_stop:
+        any_unfinished = any(
+            getattr(a, "status", None) != "arrived" for a in model.agents.select(agent_type=model.agent_cls['traffic_person'])
+            )
+        
+        if not any_unfinished: # there are no unfinished trips
             return
 
-        # 1b. ...but there ARE bus riders waiting:
+        # 1b. ...but there unfinished trips remaing:
         #      generate an EMPTY CAR to maintain traffic conditions
         too_close(model) 
 

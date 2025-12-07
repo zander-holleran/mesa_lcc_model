@@ -268,16 +268,15 @@ class TrafficModel(Model):
         # look ahead and assign who/waht the next agent is
         all_vehicles = self.agents.select(agent_type=VehicleAgent)
         self.update_next_agents()
-        # all_vehicles.do('get_next_agent') # this assigns attributes the next agent object with the previous vehicle. Need to modify so that blocker objects are also considered.
-        # all_vehicles.do('get_gap')  # Set Gap
         all_vehicles.do('adjust_status')  # Set Status
 
 
-        # Driving actions
+        # Driving actions (mostly)
         driving_vehicles = self.agents.select(lambda a: a.status in ('driving','slowing'), agent_type=VehicleAgent)
         driving_vehicles.do('get_speed_limit')  # Set Speed Limit
         driving_vehicles.do("adjust_speed")
         driving_vehicles.do("move_along_path")
+        all_vehicles.do("calculate_time_lost")  # cheeky add here to calculate time lost after speed calculations
 
         # Blocker actions
         self.crashes, self.remainder = self.should_crash_randomized_rounding(

@@ -106,6 +106,10 @@ class VehicleAgent(Agent):
         self.driving_action = None # what the car did this step, accelerate, break, coast, etc
         self.posted_speed_limit = None # the posted speed limit of the road segment the car is currently on
         self.implicit_speed_limit = None   # the speed limit adjusted for curvature, acceptable_over
+        self.speed_delta = 0  # difference between current speed and desired speed, usually neg (mpg)
+        self.cumtime_lost_sec = 0.0  # cumulative time lost due to traffic (seconds)
+        self.time_lost_sec = 0.0  # time lost that step (seconds)
+        self.toll_paid = 0  # total toll paid by this vehicle
 
         # Speed control tuning parameters (can be overridden)
         self.acceptable_over = None
@@ -115,6 +119,12 @@ class VehicleAgent(Agent):
 
         # passengers list
         self.passengers = []
+
+    def calculate_time_lost(self):
+        self.speed_delta = uc.get_mph(self.speed) - self.implicit_speed_limit 
+        frac_seconds_lost = max(0.0, -self.speed_delta / self.implicit_speed_limit)
+        self.cumtime_lost_sec += frac_seconds_lost
+        self.time_lost_sec = frac_seconds_lost
 
 
     def get_next_agent(self): 
@@ -304,7 +314,9 @@ class VehicleAgent(Agent):
             'performance': self.performance,
             'curve_responce': self.curve_responce,
             "acceptable_over": uc.get_mph(self.acceptable_over),
-            "ideal_distance_multiplier":self.ideal_distance_multiplier
+            "ideal_distance_multiplier":self.ideal_distance_multiplier, 
+            "cumtime_lost": self.cumtime_lost_sec,
+            "toll_paid": self.toll_paid,
             # Add more if needed
         })
 
@@ -327,10 +339,13 @@ class VehicleAgent(Agent):
             total_tt = wait_time + onboard_time
 
             trip_summary = {
+                "toll_paid": self.toll_paid,
+                "cumtime_lost_sec": self.cumtime_lost_sec,
                 "wait_time": wait_time,
                 "onboard_time": onboard_time,
                 "total_travel_time": total_tt,
                 "end_step": end_step,
+               
                 # add more later here: e.g. "avg_speed", "hit_closure", etc.
             }
             # call the trip completed hook on the person

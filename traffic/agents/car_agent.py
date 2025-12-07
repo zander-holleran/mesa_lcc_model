@@ -14,3 +14,5 @@ class CarAgent(VehicleAgent):
         self.performance = np.random.uniform()
         self.accel_curve = build_empirical_accel_function(self.performance)
         self.curve_responce = du.make_truncnorm(.95, .6, .1, mean=None).rvs() 
+
+        self.toll_paid = model.current_toll_car  # total toll paid by this vehicle

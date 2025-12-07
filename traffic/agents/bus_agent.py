@@ -15,3 +15,4 @@ class BusAgent(VehicleAgent):
         self.accel_curve = build_empirical_accel_function(self.performance)
         self.curve_responce = .9 
 
+        self.toll_paid = model.current_toll_bus  # total toll paid by this vehicle  
