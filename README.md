@@ -1,13 +1,13 @@
-
-# Little Cottonwood Canyon Traffic Model – README 
+# Little Cottonwood Canyon Traffic Model – README
 
 ## Overview and Purpose
 
-This project is an agent-based simulation of vehicle traffic in Little Cottonwood Canyon (LCC), Salt Lake City, using the [Mesa](https://mesa.readthedocs.io/) framework. The model aims to simulate how individual driving behavior, road geometry, and traffic interventions interact to produce system-wide effects like congestion or smooth flow.
+This project is an agent-based simulation of vehicle traffic in Little Cottonwood Canyon (LCC), Utah, built on the [Mesa](https://mesa.readthedocs.io/) framework. It combines person-level trip decisions with vehicle dynamics to explore how behavior, road geometry, and policy interventions interact over both single days and multi-day **seasons**.
 
-Unlike equation-based models, Mesa allows for **heterogeneous agents** (cars, buses, etc.) that each follow individual rules and parameters. Traffic has **emergent properties**, and agent-based simulation is especially suited to capturing these dynamic interactions.
+- **Season concept:** A season strings together multiple simulated days that share a population with persistent preferences and learning parameters. Season-level configuration is defined in `season/configs.py`, and execution is orchestrated through `SeasonOrchestrator` in `season/season_orchestrator.py`.
+- **Single-day focus:** The recommended entry point for experimenting with parameters or running analyses is `notebooks/single_day_season.ipynb`, which spins up a one-day season and provides analysis/animation helpers. A longer multi-day example lives in `notebooks/season_run.ipynb`.
 
-The current model accurately captures short-to-medium-term traffic patterns (e.g., simulating a few hours of canyon traffic) and is ready for scenario testing (e.g., adding bus lines, changing driver behavior, modeling road closures).
+The model captures short-to-medium-term traffic patterns (e.g., a single morning) and scales to multi-day experiments (e.g., toll or bus schedule changes across a season), making it suitable for scenario testing and policy exploration.
 
 ---
 
@@ -15,13 +15,14 @@ The current model accurately captures short-to-medium-term traffic patterns (e.g
 
 Key folders and files:
 
-- `main.ipynb`: Interactive demo for launching and inspecting the model.
-- `batch_run.ipynb`: Run multiple scenarios or parameter sweeps.
-- `agents/`: Agent classes (`CarAgent`, `BusAgent`, `RoadSegmentAgent`, etc.).
-- `model/`: Core model logic (`TrafficModel`, agent generation, data collection).
-- `utils/`: Helper functions for animation, unit conversions, and distributions.
-- `other_notebooks/`: Data preparation and analysis notebooks (e.g. acceleration profiling).
-- `README_UPDATED.md`: This file.
+- `notebooks/single_day_season.ipynb`: Primary notebook for running and analyzing a single-day season run (recommended starting point).
+- `notebooks/season_run.ipynb`: Example of running multiple days in sequence with the season orchestrator.
+- `traffic/`: Core traffic simulation (agents, model, utilities).
+- `season/`: Season configuration, person generation, and orchestration logic.
+- `collect_external_data/`: Scripts for loading or preprocessing road and vehicle count data.
+- `requirements.txt`: Python dependencies.
+
+Historical notebooks such as `main.ipynb` or `batch_run.ipynb` are no longer the primary workflow; prefer the season notebooks above for up-to-date examples.
 
 ---
 
@@ -48,6 +49,7 @@ Each vehicle determines its speed using:
 ### Separation of Logic Steps
 
 `adjust_speed()` and `move_along_path()` are intentionally separated to preserve logical consistency:
+
 - All agents compute speed decisions first (before any movement).
 - Then all agents move, ensuring no agent's motion influences another’s decision in the same step.
 
@@ -75,11 +77,13 @@ Vehicles are generated over time using:
 
 ### Person Generation
 
-Each person chooses to drive or wait for a bus:
+Arrivals each step follow a Bernoulli draw (`p_generate`) until a per-day cap (`max_persons`) is reached. After the cap, the model may inject empty cars to preserve realistic congestion when active trips remain.
 
-- Decision is based on a `car_preference` probability or bus stop crowding.
-- If driving, a new `CarAgent` is created.
-- If waiting, they are counted in `at_bus_stop` and ride the next bus up the canyon.
+Season runs pre-generate a reusable population of `SeasonPerson` records via `PopulationParams` (see `season/configs.py`). Each arrival pulls the next SeasonPerson from a shuffled draw order and creates a `TrafficPersonAgent` that:
+
+- Chooses a mode using generalized cost comparisons that combine expected travel time, a penalty for travel-time uncertainty, the person’s value of time, experience weights for car vs. bus, and any tolls in effect.
+- If the mode is **car**, spawns a linked `CarAgent`; if **bus**, joins the global bus-stop queue until the next scheduled bus boards passengers.
+- On trip completion, writes realized travel time, tolls, and cumulative delay back to the SeasonPerson, which updates its mode-specific priors and uncertainty for future days.
 
 ---
 
@@ -97,42 +101,27 @@ Two primary forms of output:
      - `steps_taken`, `distance_traveled`, `car_interactions`
      - Driver traits: `acceptable_over`, `performance`, `curve_responce`
 
+Season runs also capture per-day outputs to `data/season_outputs/<season_id>/`, enabling cross-day comparisons for a single population.
+
 ---
 
 ## How to Run
 
-Basic workflow:
-```python
-from mesa_lcc_model.model.traffic_model import TrafficModel
-model = TrafficModel(
-    road_gdf=road_gdf,
-    ecs_df=ecs_df,
-    max_steps=36000,
-    traffic_percentile=50,
-    car_preference=0.7,
-    bus_interval=15,
-    bus_capacity=30,
-    canyon_open_step=18000,
-    closed_sections={4}
-)
-model.run_model()
+The fastest way to explore the model is through the season notebooks:
 
-df = model.datacollector.get_model_vars_dataframe()
-results = pd.DataFrame(model.finished_agents)
-```
+1. **Single day (recommended):** Open `notebooks/single_day_season.ipynb` and run cells in order. The notebook constructs a one-day season via `make_season_config(...)` and then runs `SeasonOrchestrator.run_day()`. You can manipulate:
+   - **Demand and operations:** `traffic_percentile_schedule`, `bus_interval_schedule`, `n_days` (even if running one day), `max_persons`, `collect_every_n`.
+   - **Policy levers:** `toll_mechanism` and `toll_params` for static or pigouvian tolls.
+   - **Timing:** `start_hr` for morning start times and `canyon_closures_schedule` for forced closures.
+   - **Data sources:** `road_path` and `ecs_path` for the road network and expected vehicle counts.
+   - **Population characteristics:** `PopulationParams` (size, bus priors, seeds) to control the season’s reusable persons.
 
-To visualize or animate the output, see `animation_utils.py`.
+2. **Multi-day season:** `notebooks/season_run.ipynb` demonstrates running multiple days in sequence with the same population using `SeasonOrchestrator.run_season()`. Start here when testing interventions that require several simulated days.
 
----
+If you need to drive the model directly (outside notebooks), the core API is exposed via `TrafficModel` in `traffic/model/traffic_model.py`.
 
-## Technical Notes for Developers
-
-- **Position Tracking**: Vehicles move in continuous space and use road segment points only for navigation logic.
-- **Randomness**: Only some randomness is persistent (e.g., `acceptable_over`). Braking variation is random **each instance**, not per vehicle.
-- **Extending Behavior**: Easily subclass agents or add new ones (e.g., `TruckAgent`).
-- **Closure logic**: Vehicles pause at closures; no need to simulate disappearance or rerouting.
 ---
 
 ## Summary
 
-This Mesa model offers a highly flexible and empirically grounded framework for studying traffic behavior in constrained mountain road systems like Little Cottonwood Canyon. By carefully modeling driver heterogeneity and road features, it enables rich exploration of congestion, policy interventions, and vehicle interactions with a strong balance of realism and performance.
+This Mesa model offers a flexible and empirically grounded framework for studying traffic behavior in constrained mountain road systems like Little Cottonwood Canyon. By combining per-person decision making with persistent season populations and realistic vehicle dynamics, it enables rich exploration of congestion, policy interventions, and system behavior across both single days and full seasons.
