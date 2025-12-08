@@ -134,23 +134,19 @@ class SeasonPerson:
         self.travel_time_uncertainty_bus = unc_bus
 
 
-    def record_experience(self, day_index, mode, realized_tt, toll_paid, cumtime_lost_sec,  **kwargs):
+    def record_experience(self,  **kwargs):
         """
         Append a single trip record to history, update the mode-specific prior
         with this realized travel time.
         """
 
+        # copy of kwargs as the history record 
+        record = {**kwargs}
+        self.history.append(record)
 
-        self.history.append(
-            {
-                "day_index": day_index,
-                "mode": mode,
-                "realized_tt": realized_tt,
-                "toll_paid": toll_paid,
-                "cumtime_lost_sec": cumtime_lost_sec,
-                **kwargs,
-            }
-        )
+        # extract and coerce values used to update priors
+        mode = record["mode"]
+        realized_tt = float(record["realized_tt"])
 
         # update mode-specific prior based on this single realization
         if mode == "car":
@@ -161,3 +157,4 @@ class SeasonPerson:
             # if you ever introduce more modes, handle them here
             pass
 
+    

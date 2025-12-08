@@ -27,17 +27,21 @@ class TrafficPersonAgent(Agent):
         self.mode = self.decide_mode()
         self.vehicle = None
         
-        # timing fields – filled over the life of the trip
-        self.created_step = self.model.steps          # set when generated
-        self.board_step = None                        # for bus users only
+        # data collection – filled over the life of the trip
+        self.created_step = self.model.steps         
+        
+        # Collected from the vehicle
+        self.toll_paid = 0                         # total toll paid
+        self.board_step = None                        
+        self.arrive_step = None                       
+        self.cumtime_lost_sec = None
+
         self.wait_time = 0.0                          # minutes
         self.onboard_time = 0.0                       # minutes
         self.total_travel_time = 0.0                  # minutes
-
         self.cumtime_lost_sec = 0.0                   # seconds
-        self.toll_paid = 0.0                          # total toll paid
        
-    def compute_generalized_cost(
+    def compute_expected_generalized_cost(
             self,
             expected_travel_time,
             travel_time_uncertainty,
@@ -49,14 +53,14 @@ class TrafficPersonAgent(Agent):
             return value_of_time * experience_weight * effective_tt + toll
 
     def decide_mode(self) -> str:
-        car_cost = self.compute_generalized_cost(
+        car_cost = self.compute_expected_generalized_cost(
             expected_travel_time=self.expected_tt_car,
             travel_time_uncertainty=self.tt_unc_car,
             value_of_time=self.value_of_time,
             experience_weight=self.experience_weight_car,
             toll=self.model.current_toll_car,
         )
-        bus_cost = self.compute_generalized_cost(
+        bus_cost = self.compute_expected_generalized_cost(
             expected_travel_time=self.expected_tt_bus,
             travel_time_uncertainty=self.tt_unc_bus,
             value_of_time=self.value_of_time,
@@ -67,7 +71,7 @@ class TrafficPersonAgent(Agent):
     
     # ---------- trip completion hook ----------
 
-    def on_trip_completed(self, trip_summary: dict):
+    def tp_to_sp_info_pass(self):
         """
         Called by the VehicleAgent when the vehicle reaches end_of_road().
         trip_summary is a dict with at least:
@@ -77,24 +81,30 @@ class TrafficPersonAgent(Agent):
         and can contain additional metrics later (congestion, stops, etc.).
         """
         self.status = "arrived"
-        # store key metrics on the person
-        self.wait_time = trip_summary.get("wait_time", 0.0)
-        self.onboard_time = trip_summary.get("onboard_time", 0.0)
-        self.total_travel_time = trip_summary.get(
-            "total_travel_time",
-            self.wait_time + self.onboard_time,
-        )
-        self.toll_paid = trip_summary.get("toll_paid", 0.0)
-        self.cumtime_lost_sec = trip_summary.get("cumtime_lost_sec", 0.0)
+        wait_steps = max(0, self.board_step - self.created_step)
+        onboard_steps =  max(0, self.arrive_step - self.board_step)
+
+        wait_time = wait_steps / 60
+        onboard_time = onboard_steps / 60
+        total_tt = wait_time + onboard_time
+        cumtime_lost_min =self.cumtime_lost_sec / 60
+
+        weight = (lambda: self.experience_weight_bus if self.mode == "bus" else self.experience_weight_car)()
+        realized_cost = (total_tt*self.value_of_time*weight)+self.toll_paid       
+
 
         # forward the full summary to SeasonPerson for belief updates / history
         sp = self._season_person_ref
         if sp is not None:
             sp.record_experience(
+                # all kwargs passed are saved to sp.history as a dict
                 day_index=self.model.current_day,
                 mode=self.mode,
-                realized_tt=self.total_travel_time,
                 toll_paid=self.toll_paid,
-                cumtime_lost_sec=self.cumtime_lost_sec
-                #**trip_summary,   # keeps it extensible
+                realized_tt=total_tt,
+                wait_time=wait_time,
+                onboard_time=onboard_time,
+                cumtime_lost_min=cumtime_lost_min,
+                realized_cost=realized_cost
+              
             )

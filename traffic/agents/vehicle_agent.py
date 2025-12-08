@@ -96,7 +96,7 @@ class VehicleAgent(Agent):
         self.distance_traveled = -model.space.get_distance(model.initial_start_point, tuple(p_start))  # (meters)
         self.break_cooldown = 0
         self.speed_change = 0
-        self.created_at_step = self.model.steps 
+        self.created_at_step = self.model.steps
         self.steps_taken = 0 
         self.car_interactions = 0
         self.gap = 9_999_999 # distance to next vehicle (m) starts as effectively infinite
@@ -109,7 +109,7 @@ class VehicleAgent(Agent):
         self.speed_delta = 0  # difference between current speed and desired speed, usually neg (mpg)
         self.cumtime_lost_sec = 0.0  # cumulative time lost due to traffic (seconds)
         self.time_lost_sec = 0.0  # time lost that step (seconds)
-        self.toll_paid = 0  # total toll paid by this vehicle
+        self.toll_paid = 0  # total toll paid by this vehicle, assigned by buses and cars
 
         # Speed control tuning parameters (can be overridden)
         self.acceptable_over = None
@@ -123,8 +123,8 @@ class VehicleAgent(Agent):
     def calculate_time_lost(self):
         self.speed_delta = uc.get_mph(self.speed) - self.implicit_speed_limit 
         frac_seconds_lost = max(0.0, -self.speed_delta / self.implicit_speed_limit)
-        self.cumtime_lost_sec += frac_seconds_lost
         self.time_lost_sec = frac_seconds_lost
+        self.cumtime_lost_sec += frac_seconds_lost
 
 
     def get_next_agent(self): 
@@ -298,67 +298,6 @@ class VehicleAgent(Agent):
 
         # new speed - old speed
         self.speed_change = self.speed - old_speed
-    
-        
-    def end_of_road(self):
-        '''this is where one part of finished agents reporting occures, is paired with '''
-        self.status = "arrived"
-        self.model.finished_agents.append({
-            "AgentID": self.unique_id,
-            'AgentType': self.__class__.__name__,
-            "created_at_step": self.created_at_step,
-            "steps_taken": self.steps_taken,
-            "car_interactions": self.car_interactions, 
-            "distance_traveled": self.distance_traveled, 
-            "approx_average_mph": uc.meters_to_miles(self.distance_traveled)/(self.steps_taken/3600), 
-            'performance': self.performance,
-            'curve_responce': self.curve_responce,
-            "acceptable_over": uc.get_mph(self.acceptable_over),
-            "ideal_distance_multiplier":self.ideal_distance_multiplier, 
-            "cumtime_lost": self.cumtime_lost_sec,
-            "toll_paid": self.toll_paid,
-            # Add more if needed
-        })
-
-        end_step = self.model.steps
-
-        for tp in getattr(self, "passengers", []):
-            created = getattr(tp, "created_step", end_step)
-
-            if tp.mode == "bus":
-                board = getattr(tp, "board_step", end_step)
-                wait_steps = max(0, board - created)
-                onboard_steps = max(0, end_step - board)
-            else:
-                # car: no waiting at stop
-                wait_steps = 0
-                onboard_steps = max(0, end_step - created)
-
-            wait_time = wait_steps / 60
-            onboard_time = onboard_steps / 60
-            total_tt = wait_time + onboard_time
-
-            trip_summary = {
-                "toll_paid": self.toll_paid,
-                "cumtime_lost_sec": self.cumtime_lost_sec,
-                "wait_time": wait_time,
-                "onboard_time": onboard_time,
-                "total_travel_time": total_tt,
-                "end_step": end_step,
-               
-                # add more later here: e.g. "avg_speed", "hit_closure", etc.
-            }
-            # call the trip completed hook on the person
-            tp.on_trip_completed(trip_summary)
-
-        # remove self from various model lists
-        try: self._rs[self.path_index].vehicles_here.remove(self)       # remove from road segment
-        except Exception: pass
-        try: self.model.space.remove_agent(self)                        # remove from agent set
-        except Exception:pass
-        try: self.model.vehicles_list.remove(self)                      # remove from vehicles list
-        except ValueError: pass 
-        self.remove() # remove from model
               
     def move_along_path(self):
         """Advance along path by self.speed meters using a single path + index."""
@@ -404,3 +343,47 @@ class VehicleAgent(Agent):
 
         # finally move the agent
         self.model.space.move_agent(self, (float(new_pos[0]), float(new_pos[1])))
+
+
+    def vehicle_to_tp_info_pass(self):
+        for tp in getattr(self, "passengers", []):
+            tp.toll_paid = self.toll_paid
+            tp.board_step = self.created_at_step
+            tp.arrive_step = self.model.steps
+            tp.cumtime_lost_sec 
+
+            # call the trip completed hook on the person
+            tp.tp_to_sp_info_pass()
+
+    def end_of_road(self):
+        self.status = "arrived"
+        self.model.finished_agents.append({
+            "AgentID": self.unique_id,
+            'AgentType': self.__class__.__name__,
+            "created_at_step": self.created_at_step,
+            "steps_taken": self.steps_taken,
+            "car_interactions": self.car_interactions, 
+            "distance_traveled": self.distance_traveled, 
+            "approx_average_mph": uc.meters_to_miles(self.distance_traveled)/(self.steps_taken/3600), 
+            'performance': self.performance,
+            'curve_responce': self.curve_responce,
+            "acceptable_over": uc.get_mph(self.acceptable_over),
+            "ideal_distance_multiplier":self.ideal_distance_multiplier, 
+            "cumtime_lost": self.cumtime_lost_sec,
+            "toll_paid": self.toll_paid,
+            # Add more if needed
+        })
+
+    
+        self.vehicle_to_tp_info_pass()
+
+        
+
+        # remove vehicle from various model lists
+        try: self._rs[self.path_index].vehicles_here.remove(self)       
+        except Exception: pass
+        try: self.model.space.remove_agent(self)                        
+        except Exception:pass
+        try: self.model.vehicles_list.remove(self)                     
+        except ValueError: pass 
+        self.remove() # remove from model
