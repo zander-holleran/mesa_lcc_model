@@ -2,14 +2,22 @@ from mesa import Agent
 from scipy.stats import lognorm, skewnorm, norm
 from math import exp, sqrt
 from typing import Sequence, Tuple
+from season.persons import SeasonPerson
 # from traffic.utils import compute_experience_beliefs, compute_generalized_cost
 
 class TrafficPersonAgent(Agent):
-    def __init__(self, model, season_person):
+    def __init__(self, model, season_person:SeasonPerson):
         super().__init__(model)
+
+        
 
         self.person_id = season_person.person_id
         self._season_person_ref = season_person  # robust link back for logging
+
+        if season_person is None:
+            raise ValueError("TrafficPersonAgent requires a SeasonPerson instance (got None).")
+        if not isinstance(season_person, SeasonPerson):
+            raise TypeError(f"season_person must be SeasonPerson, got {type(season_person)!r}")
 
         self.status = "traveling"  # or "arrived"
 
@@ -80,7 +88,6 @@ class TrafficPersonAgent(Agent):
             - total_travel_time (minutes)
         and can contain additional metrics later (congestion, stops, etc.).
         """
-        self.status = "arrived"
         wait_steps = max(0, self.board_step - self.created_step)
         onboard_steps =  max(0, self.arrive_step - self.board_step)
 
@@ -95,7 +102,7 @@ class TrafficPersonAgent(Agent):
 
         # forward the full summary to SeasonPerson for belief updates / history
         sp = self._season_person_ref
-        if sp is not None:
+        if sp:
             sp.record_experience(
                 # all kwargs passed are saved to sp.history as a dict
                 day_index=self.model.current_day,
@@ -108,3 +115,5 @@ class TrafficPersonAgent(Agent):
                 realized_cost=realized_cost
               
             )
+                
+        self.status = "arrived"

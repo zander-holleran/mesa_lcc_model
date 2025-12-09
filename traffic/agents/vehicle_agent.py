@@ -356,7 +356,6 @@ class VehicleAgent(Agent):
             tp.tp_to_sp_info_pass()
 
     def end_of_road(self):
-        self.status = "arrived"
         self.model.finished_agents.append({
             "AgentID": self.unique_id,
             'AgentType': self.__class__.__name__,
@@ -374,10 +373,9 @@ class VehicleAgent(Agent):
             # Add more if needed
         })
 
-    
         self.vehicle_to_tp_info_pass()
 
-        
+        self.status = "arrived"
 
         # remove vehicle from various model lists
         try: self._rs[self.path_index].vehicles_here.remove(self)       

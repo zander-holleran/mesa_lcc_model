@@ -45,31 +45,7 @@ class TrafficModel(Model):
         }
         
         # --- SeasonPersons wiring ---
-        self.season_persons = season_persons or []
-
-
-         # base weights from travel_propensity
-        self.person_weights = np.array(
-            [p.travel_propensity for p in self.season_persons],
-            dtype=float,
-        )
-      
-        if len(self.person_weights) > 0:
-            probs = self.person_weights / self.person_weights.sum()
-            # precompute a full random ordering of person indices for THIS day
-            self.person_draw_order = self._np_rng.choice(
-                len(self.season_persons),
-                size=len(self.season_persons),
-                replace=False,
-                p=probs,
-            )
-        else:
-            self.person_draw_order = np.array([], dtype=int)
-
-        # pointer into the draw order
-        self.person_draw_pointer = 0
-
-
+        self.season_person_pool = list(season_persons) or []
 
         #===== model perams =====
         self.current_day = current_day
@@ -152,12 +128,11 @@ class TrafficModel(Model):
         self.blockers_list = []
 
     # -~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~ END OF INIT -~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
-    def max_persons_check(self, all_vehicles):
-    # Stop model when all generated Vehiclea have been removed
-        if self.person_counter == self.max_persons:
-            if len(all_vehicles) == 0:
-                print(f"{self.person_counter} people generated stopping model.")
-                self.running = False
+    def max_persons_check(self):
+    # Stop model when entire population has completed a trip 
+        if not self.season_person_pool and not any(getattr(a, "status", None) != "arrived" for a in self.agents.select(agent_type=self.agent_cls['traffic_person'])):
+            print(f"{self.person_counter} people arrived stopping model.")
+            self.running = False
     
     def max_steps_check(self):
         # Stop model at hard cap of steps
@@ -302,13 +277,12 @@ class TrafficModel(Model):
         self.agents.select(agent_type=RoadSegmentAgent).do("clear_vehicles")
             
         self.max_steps_check()
-        self.max_persons_check(all_vehicles=all_vehicles)
+        self.max_persons_check()
 
     def run_model(self):
         for _ in tqdm(range(self.max_steps), desc="Simulating", unit="step"):
-            if not self.running:
+            if not getattr(self, "running", True):
                 break
-        #while self.running:
             self.step()
     
 
