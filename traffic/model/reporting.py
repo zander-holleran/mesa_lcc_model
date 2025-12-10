@@ -84,7 +84,38 @@ def report_avg_speed_by_section(model):
     }
 
     return avg_speed_by_section
-    
+
+def get_recent_bus_mode_share(model):
+    """
+    Percent of traffic-persons created in the most-recent collection window who chose 'bus'.
+    Uses model.collect_every_n to determine the window: [model.steps - collect_every_n + 1, model.steps].
+    Returns percentage (0-100) or NaN if no persons were created in that window.
+    """
+    tp_cls = getattr(model, "agent_cls", {}).get("traffic_person", None)
+
+    # get all traffic-person agents
+    if tp_cls is not None:
+        persons = list(model.agents.select(agent_type=tp_cls))
+    else:
+        # fallback: iterate agent set and filter by class name
+        persons = [a for a in list(model.agents) if a.__class__.__name__ == "TrafficPersonAgent"]
+
+    # determine window bounds
+    window = max(1, getattr(model, "collect_every_n", 1))
+    upper = getattr(model, "steps", 0)
+    lower = max(0, upper - window + 1)
+
+    # filter persons created in this window
+    recent = [
+        a for a in persons
+        if getattr(a, "created_step", None) is not None and lower <= a.created_step <= upper
+    ]
+
+    if not recent:
+        return float("nan")
+
+    bus_count = sum(1 for a in recent if getattr(a, "mode", None) == "bus")
+    return 100.0 * bus_count / len(recent)
 
 agent_reporters={
     "AgentType": lambda a: a.__class__.__name__ ,
@@ -110,14 +141,16 @@ model_reporters = {
     'Step':lambda m: m.steps,
     "current_toll_car": lambda m: m.current_toll_car,
     "volume": lambda m: len(m.agents.select(agent_type=VehicleAgent)),
+    "bus_mode_share_recent": get_recent_bus_mode_share,
+    "at_bus_stop": lambda m: len(m.at_bus_stop),
     # "avg_time_to_top": get_average_time_to_top,
     # "avg_car_interactions": get_average_car_interactions,
-    # "avg_posted_sl_delta":get_average_speed_relative_to_posted_sl,
-    # "avg_implicit_sl_delta":get_average_speed_relative_to_implicit_sl,
-    "person_counter": lambda m: m.person_counter,
-    "bus_counter": lambda m: m.bus_counter,
-    "car_counter": lambda m: m.car_counter,
-    "bus_riders": lambda m: m.bus_riders,
+    "avg_posted_sl_delta":get_average_speed_relative_to_posted_sl,
+   # "avg_implicit_sl_delta":get_average_speed_relative_to_implicit_sl,
+    # "person_counter": lambda m: m.person_counter,
+    # "bus_counter": lambda m: m.bus_counter,
+    # "car_counter": lambda m: m.car_counter,
+    # "bus_riders": lambda m: m.bus_riders,
     # "volume_by_section": report_volume_by_section,
     # 'speed_by_section':report_avg_speed_by_section
 

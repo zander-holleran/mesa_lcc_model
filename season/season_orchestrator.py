@@ -1,6 +1,7 @@
 """Utilities for orchestrating multi-day traffic model runs."""
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Protocol
@@ -20,7 +21,7 @@ from season.configs import SeasonConfig
 class SeasonOrchestrator:
     """Run a series of daily simulations and persist their outputs."""
 
-    def __init__(self, season_config: SeasonConfig,  store_data: bool = False , output_dir: str = "data/season_outputs"):
+    def __init__(self, season_config: SeasonConfig,  store_data: bool = False , output_root_dir: str = "data/season_outputs"):
         self.config = season_config
 
         self.road_gdf = gpd.read_parquet(self.config.road_path)
@@ -37,7 +38,7 @@ class SeasonOrchestrator:
         self.store_data = store_data
         self.output_dir = None
         if store_data:
-            self.output_dir = Path(output_dir) / self.config.season_id
+            self.output_dir = Path(output_root_dir) / self.config.season_id
             print(f"Season outputs will be saved to: {self.output_dir}")
             self.output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -47,12 +48,35 @@ class SeasonOrchestrator:
 
         self.trip_log_rows = []   # list of dicts; one row per trip
         self.day_summaries = []   # list of per-day summary dicts
+        self.season_person_log_rows = []  # list of dicts; snapshot per person per day
+        self.sp_day_summaries = []        # list of per-day SP summaries
 
     def run_season(self):
         """Run all days in the season config, in order."""
         # could also just: for _ in self.config.day_params: self.run_day()
         for day_cfg in self.config.day_params:
             self.run_day(day_cfg)
+
+        if self.store_data:
+            log_df = self.get_trip_log_df()
+            if log_df is not None:
+                log_df_path = self.output_dir / f"trip_log.parquet"
+                log_df.to_parquet(log_df_path)
+
+            summary_df = self.get_day_summary_df()
+            if summary_df is not None:
+                summary_df_path = self.output_dir / f"day_summary.parquet"
+                summary_df.to_parquet(summary_df_path)
+
+            sp_log_df = self.get_season_person_log_df()
+            if sp_log_df is not None:
+                sp_log_df_path = self.output_dir / f"season_person_log.parquet"
+                sp_log_df.to_parquet(sp_log_df_path)
+
+            sp_summary_df = self.get_sp_day_summary_df()
+            if sp_summary_df is not None:
+                sp_summary_df_path = self.output_dir / f"sp_day_summary.parquet"
+                sp_summary_df.to_parquet(sp_summary_df_path)
 
     def run_day(self, day_cfg=None):
         """
@@ -78,7 +102,9 @@ class SeasonOrchestrator:
         self.last_model_run = tm
 
         self._append_day_trip_log(day_index)
+        self._append_season_person_log(day_index)
         summary = self.compute_day_summary(day_index)
+        _ = self.compute_sp_day_summary(day_index)
 
         # simple print for now
         if summary is not None:
@@ -91,10 +117,12 @@ class SeasonOrchestrator:
                 f"avg_tt_car={summary['avg_tt_car']:.1f} min, "
                 f"avg_toll_car=${summary['avg_toll_car']:.2f}, "
                 f"Total toll=${summary['total_toll_car']:.2f}" 
+                f"Avg_cumtime_lost={summary['avg_cum_time_lost']:.1f} min" 
+
             )
 
         if self.store_data:
-            self._save_day_outputs(day_index, tm)
+            self._save_datacollector_outputs(day_index, tm)
 
         return tm
     
@@ -138,17 +166,13 @@ class SeasonOrchestrator:
 #-----------------------------------------------------------------------------  
 # ------------------------- Compute logs + summaries -------------------------
 #-----------------------------------------------------------------------------
-    def _save_day_outputs(self, day_index, tm):
+    def _save_datacollector_outputs(self, day_index, tm):
         prefix = f"day_{day_index}"
-
-        model_ts = au.model_data_time_series(tm)
-        finished_agents = au.finished_agents_summary_df(tm, plots=True)
-
+        model_ts = tm.datacollector.get_model_vars_dataframe()
         model_ts_path = self.output_dir / f"{prefix}_model_ts.parquet"
-        finished_path = self.output_dir / f"{prefix}_finished_agents.parquet"
-
         model_ts.to_parquet(model_ts_path)
-        finished_agents.to_parquet(finished_path)
+
+
 
     def _append_day_trip_log(self, day_index):
         """
@@ -176,6 +200,20 @@ class SeasonOrchestrator:
                         **rec,   # day_index, mode, toll_paid, realized_tt, etc.
                     }
                     self.trip_log_rows.append(row)
+
+    def _append_season_person_log(self, day_index):
+        """
+        Capture a snapshot of every SeasonPerson state for the given day.
+        Stores a deep copy of all public attributes so future mutations
+        do not change the logged record.
+        """
+        for sp in self.season_persons:
+            snapshot = {"day_index": day_index}
+            for attr, val in vars(sp).items():
+                if attr.startswith("_"):
+                    continue
+                snapshot[attr] = copy.deepcopy(val)
+            self.season_person_log_rows.append(snapshot)
 
     def compute_day_summary(self, day_index):
         """
@@ -240,6 +278,43 @@ class SeasonOrchestrator:
         self.day_summaries.append(summary)
         return summary
 
+    def compute_sp_day_summary(self, day_index):
+        """
+        Compute summary stats for SeasonPerson states for a single day.
+        Returns a dict; also appends it to self.sp_day_summaries.
+        """
+        if not self.season_person_log_rows:
+            print(f"No season person logs yet; day {day_index} SP summary is empty.")
+            return None
+
+        df = pd.DataFrame(self.season_person_log_rows)
+        day_df = df[df["day_index"] == day_index]
+
+        if day_df.empty:
+            print(f"No SeasonPerson snapshots recorded for day {day_index}.")
+            return None
+
+        history_lengths = (
+            day_df["history"].apply(len) if "history" in day_df else pd.Series(dtype=float)
+        )
+
+        sp_summary = {
+            "day_index": day_index,
+            "total_persons": len(day_df),
+            "avg_expected_tt_car": day_df["expected_tt_car"].mean(),
+            "avg_expected_tt_bus": day_df["expected_tt_bus"].mean(),
+            "avg_prior_car": day_df["prior_car"].mean(),
+            "avg_prior_bus": day_df["prior_bus"].mean(),
+            "avg_travel_time_uncertainty_car": day_df["travel_time_uncertainty_car"].mean(),
+            "avg_travel_time_uncertainty_bus": day_df["travel_time_uncertainty_bus"].mean(),
+            "avg_value_of_time": day_df["value_of_time"].mean(),
+            "avg_travel_propensity": day_df["travel_propensity"].mean(),
+            "avg_history_len": history_lengths.mean() if not history_lengths.empty else 0.0,
+        }
+
+        self.sp_day_summaries.append(sp_summary)
+        return sp_summary
+
 # ----------------------------------------------------------------------
 # -------------------------  get df functions  -------------------------
 # ----------------------------------------------------------------------
@@ -280,6 +355,42 @@ class SeasonOrchestrator:
 
         return df.reset_index(drop=True)
 
+    def get_season_person_log_df(self):
+        """
+        Return SeasonPerson state snapshots as a DataFrame.
+        """
+        if not self.season_person_log_rows:
+            warnings.warn(
+                "No season person logs recorded yet; run at least one day before "
+                "calling get_season_person_log_df().",
+                UserWarning,
+            )
+            return None
+
+        df = pd.DataFrame(self.season_person_log_rows)
+
+        col_order = [
+            "day_index",
+            "person_id",
+            "season_id",
+            "value_of_time",
+            "expected_tt_car",
+            "expected_tt_bus",
+            "travel_time_uncertainty_car",
+            "travel_time_uncertainty_bus",
+            "prior_car",
+            "prior_bus",
+            "travel_propensity",
+        ]
+        first = [c for c in col_order if c in df.columns]
+        rest = [c for c in df.columns if c not in first]
+        df = df[first + rest]
+
+        if "day_index" in df.columns and "person_id" in df.columns:
+            df = df.sort_values(["day_index", "person_id"])
+
+        return df.reset_index(drop=True)
+
     def get_day_summary_df(self):
         """
         Return per-day summaries as a DataFrame, or None if none exist yet.
@@ -305,6 +416,42 @@ class SeasonOrchestrator:
             "total_toll_car",
             "avg_cumlost_bus",
             "avg_cumlost_car",
+        ]
+        first = [c for c in col_order if c in df.columns]
+        rest = [c for c in df.columns if c not in first]
+        df = df[first + rest]
+
+        if "day_index" in df.columns:
+            df = df.sort_values("day_index")
+
+        return df.reset_index(drop=True)
+
+    def get_sp_day_summary_df(self):
+        """
+        Return per-day SeasonPerson summaries as a DataFrame, or None if none exist yet.
+        """
+        if not self.sp_day_summaries:
+            warnings.warn(
+                "No SeasonPerson day summaries recorded yet; make sure run_day() or "
+                "run_season() has been called to populate SP summaries.",
+                UserWarning,
+            )
+            return None
+
+        df = pd.DataFrame(self.sp_day_summaries)
+
+        col_order = [
+            "day_index",
+            "total_persons",
+            "avg_expected_tt_car",
+            "avg_expected_tt_bus",
+            "avg_prior_car",
+            "avg_prior_bus",
+            "avg_travel_time_uncertainty_car",
+            "avg_travel_time_uncertainty_bus",
+            "avg_value_of_time",
+            "avg_travel_propensity",
+            "avg_history_len",
         ]
         first = [c for c in col_order if c in df.columns]
         rest = [c for c in df.columns if c not in first]

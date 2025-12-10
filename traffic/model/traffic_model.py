@@ -60,8 +60,6 @@ class TrafficModel(Model):
         self.toll_mechanism = toll_mechanism
         self.toll_params = toll_params or {}
 
-        print(f"Toll mechanism: {self.toll_mechanism} with params {self.toll_params}")
-
         self.current_toll_car = self.toll_params.get("car", 0.0)
         self.current_toll_bus = self.toll_params.get("bus", 0.0)
 
@@ -193,8 +191,8 @@ class TrafficModel(Model):
         """
 
         # these params come from SeasonConfig / DayParams via __init__
-        threshold = self.toll_params.get("volume_threshold", 500)
-        slope = self.toll_params.get("slope", 0.02)          
+        threshold = self.toll_params.get("volume_threshold", 100)
+        slope = self.toll_params.get("slope", 0.05)          
         base_price = self.toll_params.get("base_price", 5.0)
        
         volume = len(self.vehicles_list)  # current number of vehicles on the road
