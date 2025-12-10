@@ -39,15 +39,14 @@ class TrafficPersonAgent(Agent):
         self.created_step = self.model.steps         
         
         # Collected from the vehicle
-        self.toll_paid = 0                         # total toll paid
+        self.toll_paid = None                         # total toll paid
         self.board_step = None                        
         self.arrive_step = None                       
         self.cumtime_lost_sec = None
 
-        self.wait_time = 0.0                          # minutes
-        self.onboard_time = 0.0                       # minutes
-        self.total_travel_time = 0.0                  # minutes
-        self.cumtime_lost_sec = 0.0                   # seconds
+        self.wait_time = None                          # minutes
+        self.onboard_time = None                       # minutes
+        self.total_travel_time = None                  # minutes
        
     def compute_expected_generalized_cost(
             self,
@@ -113,7 +112,6 @@ class TrafficPersonAgent(Agent):
                 onboard_time=onboard_time,
                 cumtime_lost_min=cumtime_lost_min,
                 realized_cost=realized_cost
-              
             )
                 
         self.status = "arrived"

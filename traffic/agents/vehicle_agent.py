@@ -350,7 +350,7 @@ class VehicleAgent(Agent):
             tp.toll_paid = self.toll_paid
             tp.board_step = self.created_at_step
             tp.arrive_step = self.model.steps
-            tp.cumtime_lost_sec 
+            tp.cumtime_lost_sec = self.cumtime_lost_sec
 
             # call the trip completed hook on the person
             tp.tp_to_sp_info_pass()

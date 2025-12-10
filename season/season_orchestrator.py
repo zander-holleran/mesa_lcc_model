@@ -84,11 +84,13 @@ class SeasonOrchestrator:
         if summary is not None:
             print(
                 f"Day {day_index}: "
+                f"avg_cost=${summary['avg_realized_cost']:.1f}, "
                 f"N={summary['total_persons']}, "
                 f"bus_share={summary['share_bus']:.2f}, "
                 f"avg_tt_bus={summary['avg_tt_bus']:.1f} min, "
                 f"avg_tt_car={summary['avg_tt_car']:.1f} min, "
-                f"avg_toll_car=${summary['avg_toll_car']:.2f}"
+                f"avg_toll_car=${summary['avg_toll_car']:.2f}, "
+                f"Total toll=${summary['total_toll_car']:.2f}" 
             )
 
         if self.store_data:
@@ -100,17 +102,6 @@ class SeasonOrchestrator:
         for person in self.season_persons:
             person.update_beliefs_from_history(current_day=day_index)
 
-    def _save_day_outputs(self, day_index, tm):
-        prefix = f"day_{day_index}"
-
-        model_ts = au.model_data_time_series(tm)
-        finished_agents = au.finished_agents_summary_df(tm, plots=True)
-
-        model_ts_path = self.output_dir / f"{prefix}_model_ts.parquet"
-        finished_path = self.output_dir / f"{prefix}_finished_agents.parquet"
-
-        model_ts.to_parquet(model_ts_path)
-        finished_agents.to_parquet(finished_path)
          
     def _build_model(self, day_cfg) -> TrafficModel:
         """Create a ``TrafficModel`` instance for a single day."""
@@ -144,6 +135,20 @@ class SeasonOrchestrator:
             p_generate=None,
             car_preference=1,
         )
+#-----------------------------------------------------------------------------  
+# ------------------------- Compute logs + summaries -------------------------
+#-----------------------------------------------------------------------------
+    def _save_day_outputs(self, day_index, tm):
+        prefix = f"day_{day_index}"
+
+        model_ts = au.model_data_time_series(tm)
+        finished_agents = au.finished_agents_summary_df(tm, plots=True)
+
+        model_ts_path = self.output_dir / f"{prefix}_model_ts.parquet"
+        finished_path = self.output_dir / f"{prefix}_finished_agents.parquet"
+
+        model_ts.to_parquet(model_ts_path)
+        finished_agents.to_parquet(finished_path)
 
     def _append_day_trip_log(self, day_index):
         """
@@ -195,32 +200,49 @@ class SeasonOrchestrator:
 
         share_bus = len(bus_df) / total_persons if total_persons > 0 else 0.0
 
+        # total pop metrics
+        avg_cumtime_lost_min   = day_df["cumtime_lost_min"].mean()
+        avg_realized_cost       = day_df["realized_cost"].mean() 
+
         # bus metrics
-        avg_wait_bus      = bus_df["wait_time"].mean()
-        avg_tt_bus        = bus_df["realized_tt"].mean()
-        avg_cumlost_bus   = bus_df["cumtime_lost_min"].mean()
+        avg_wait_bus          = bus_df["wait_time"].mean()
+        avg_onboard_time_bus  = bus_df["onboard_time"].mean()
+        avg_tt_bus            = bus_df["realized_tt"].mean()
+        avg_cumlost_bus       = bus_df["cumtime_lost_min"].mean()
+        avg_realized_cost_bus = bus_df["realized_cost"].mean() 
 
         # car metrics
-        avg_tt_car        = car_df["realized_tt"].mean()
-        avg_toll_car      = car_df["toll_paid"].mean()
-        total_toll_car    = car_df["toll_paid"].sum()
-        avg_cumlost_car   = car_df["cumtime_lost_min"].mean()
+        avg_tt_car            = car_df["realized_tt"].mean()
+        avg_toll_car          = car_df["toll_paid"].mean()
+        total_toll_car        = car_df["toll_paid"].sum()
+        avg_cumlost_car       = car_df["cumtime_lost_min"].mean()
+        avg_realized_cost_car = bus_df["realized_cost"].mean() 
+
 
         summary = {
             "day_index": day_index,
+            "avg_cum_time_lost": avg_cumtime_lost_min,
+            "avg_realized_cost": avg_realized_cost,
             "total_persons": total_persons,
             "share_bus": share_bus,
             "avg_wait_bus": avg_wait_bus,
+            "avg_onboard_time_bus":avg_onboard_time_bus,
             "avg_tt_bus": avg_tt_bus,
+            "avg_realized_cost_bus":avg_realized_cost_bus,
             "avg_tt_car": avg_tt_car,
             "avg_toll_car": avg_toll_car,
             "total_toll_car": total_toll_car,
             "avg_cumlost_bus": avg_cumlost_bus,
             "avg_cumlost_car": avg_cumlost_car,
+            "avg_realized_cost_car":avg_realized_cost_car
         }
 
         self.day_summaries.append(summary)
         return summary
+
+# ----------------------------------------------------------------------
+# -------------------------  get df functions  -------------------------
+# ----------------------------------------------------------------------
 
     def get_trip_log_df(self):
         """
@@ -292,6 +314,12 @@ class SeasonOrchestrator:
             df = df.sort_values("day_index")
 
         return df.reset_index(drop=True)
+
+
+# ----------------------------------------------------------------------------------
+# -------------------------  temp functions - delete later -------------------------
+# ----------------------------------------------------------------------------------
+
 
     def run_day_temp(self):
         """
