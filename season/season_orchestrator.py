@@ -10,6 +10,7 @@ import json
 import geopandas as gpd
 import numpy as np
 import pandas as pd
+import pickle
 import warnings
 
 
@@ -62,6 +63,7 @@ class SeasonOrchestrator:
         season_summary = self._compute_season_summary()
 
         if self.store_data:
+            self._save_config()
             self._save_season_summary(season_summary)
 
             self._save_df_if_exists(self.get_trip_log_df(), "trip_log.parquet")
@@ -394,6 +396,15 @@ class SeasonOrchestrator:
             df = pd.DataFrame([season_summary])
 
         df.to_csv(csv_path, index=False)
+
+    def _save_config(self):
+        """Persist the SeasonConfig object next to other outputs."""
+        if self.output_dir is None:
+            return
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        config_path = self.output_dir / "season_config.pkl"
+        with config_path.open("wb") as fh:
+            pickle.dump(self.config, fh, protocol=pickle.HIGHEST_PROTOCOL)
 
     def _save_df_if_exists(self, df, filename: str):
         if df is None:
