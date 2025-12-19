@@ -9,7 +9,8 @@ class TrafficPersonAgent(Agent):
     def __init__(self, model, season_person:SeasonPerson):
         super().__init__(model)
 
-        
+        self.model.created_counts[type(self).__name__] += 1 # temp 
+
 
         self.person_id = season_person.person_id
         self._season_person_ref = season_person  # robust link back for logging

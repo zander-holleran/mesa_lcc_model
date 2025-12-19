@@ -13,4 +13,7 @@ class RoadSegmentAgent(Agent):
         self.curvature = curvature
         self.linked_coord = linked_coord
         self.distance_traveled = distance_traveled
+        
+        self.model.created_counts[type(self).__name__] += 1 # temp 
+
     

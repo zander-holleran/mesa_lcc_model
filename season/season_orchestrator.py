@@ -96,6 +96,9 @@ class SeasonOrchestrator:
         tm.run_model()
         self.last_model_run = tm
 
+        print(dict(tm.created_counts)) # temp
+
+
         self._append_day_trip_log(day_index)
         self._append_season_person_log(day_index)
         self._compute_day_summary(day_index)

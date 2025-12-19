@@ -11,12 +11,10 @@ class BlockerAgent(Agent):
         
         super().__init__(model)
 
-        print(f'you made a blocker: {blocker_type}')
+        self.model.created_counts[type(self).__name__] += 1 # temp 
 
-        # stuff to do with the road segment where the block will take place
         self.self_distruct_timer = self_distruct_timer
         self.status = blocker_type # can be crash or canyon_closure
-        # road_segment stuff
         self.pos = self.model.rs_pos[seg_i]  # The index of the segment
         self.distance_traveled = self.model.rs_distance[seg_i]
         self.speed=0
@@ -24,16 +22,14 @@ class BlockerAgent(Agent):
         # IMPORTANT upon blocker creation nxt agent of all vehicles is reset to None
         self.model.agents.select(agent_type=VehicleAgent).do("reset_next_agent") 
 
-        # holder to speed up next agent assignment
         self.next_agent = None
-        self.gap = 9_999_999.0  # distance to next vehicle (m) starts
+        self.gap = 9_999_999.0  
         
     def self_distruct(self):
-        # Remove from the model's AgentSet
         self.model.agents.select(agent_type=VehicleAgent).do("reset_next_agent") # IMPORTANT upon blocker destruction nxt agent of all vehicles is reset to None
-        try: self.model.blockers_list.remove(self)   # drop from vehicles list
+        try: self.model.blockers_list.remove(self)   
         except ValueError: pass
-        self.model.agents.remove(self)               # drop from agent set
+        self.model.agents.remove(self)              
 
     def tick(self):
         self.self_distruct_timer -= 1
