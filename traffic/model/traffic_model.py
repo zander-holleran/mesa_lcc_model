@@ -98,7 +98,6 @@ class TrafficModel(Model):
         self.car_counter = 0 
         self.bus_riders = 0 
         self.at_bus_stop = []
-        self.traffic_persons_list = []
         self.finished_agents = []
 
         # ===== Set up ContinuousSpace =====
@@ -125,6 +124,7 @@ class TrafficModel(Model):
         # agent lists
         self.vehicles_list = []
         self.blockers_list = []
+        self.traffic_persons_list = []
 
     # -~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~ END OF INIT -~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
     def max_persons_check(self):
@@ -293,5 +293,6 @@ class TrafficModel(Model):
     # do(self.vehicles_list, "step")
     # do(self.blockers_list, "tick")
    
+
 
 
