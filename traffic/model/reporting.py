@@ -151,7 +151,7 @@ model_reporters = {
    # "FinishedAgentsSummary": lambda m: None,  # required for finished agents to work
     'Step':lambda m: m.steps,
     "current_toll_car": lambda m: m.current_toll_car,
-    "volume": lambda m: len(m.agents.select(agent_type=VehicleAgent)),
+    "volume": lambda m: len(m.vehicles_list),
     "bus_mode_share_recent": get_recent_bus_mode_share,
     "at_bus_stop": lambda m: len(m.at_bus_stop),
     # "avg_time_to_top": get_average_time_to_top,

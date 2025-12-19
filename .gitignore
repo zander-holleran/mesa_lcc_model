@@ -12,6 +12,8 @@ venv/
 # ignore data
 data/
 .DS_Store
+prof.stats
 
 # ignore notes folder
 notes/
+
