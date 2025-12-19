@@ -332,10 +332,6 @@ class VehicleAgent(Agent):
             start_of_seg = self.path_xy[i]
             new_pos = start_of_seg + self._seg_dir[i] * s # this identifies the new pos as the start of the seg + the direction of the seg * how far into the seg you are (s)
 
-
-        if 0 <= i < len(self._rs):
-            self.road_segments[i].vehicles_here.append(self)
-
         # book keeping
         self.path_index = i
         self._s = s

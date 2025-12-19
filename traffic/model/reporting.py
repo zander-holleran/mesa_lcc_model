@@ -60,33 +60,6 @@ def get_average_speed_relative_to_posted_sl(model):
 def get_average_speed_relative_to_implicit_sl(model):
     return get_average_speed_relative_to_sl(model, "implicit_speed_limit")
 
-def report_volume_by_section(model):
-    counts = {}
-    for seg in model.road_segments:
-        sec = seg.road_section
-        counts[sec] = counts.get(sec, 0) + len(seg.vehicles_here)
-    return counts
-
-
-def report_avg_speed_by_section(model):
-    speed_sums = {}
-    counts = {}
-
-    for seg in model.road_segments:
-        sec = seg.road_section
-        for v in seg.vehicles_here:
-            sp = getattr(v, "speed", None)
-            if sp is None:
-                continue
-            speed_sums[sec] = speed_sums.get(sec, 0.0) + sp
-            counts[sec] = counts.get(sec, 0) + 1
-
-    out = {}
-    for sec in range(1, 6):
-        n = counts.get(sec, 0)
-        out[sec] = uc.get_mph(speed_sums.get(sec, 0.0) / n) if n else 0.0
-
-    return out
 
 
 def get_recent_bus_mode_share(model):
@@ -162,8 +135,6 @@ model_reporters = {
     # "bus_counter": lambda m: m.bus_counter,
     # "car_counter": lambda m: m.car_counter,
     # "bus_riders": lambda m: m.bus_riders,
-    # "volume_by_section": report_volume_by_section,
-    # 'speed_by_section':report_avg_speed_by_section
 
 
 }

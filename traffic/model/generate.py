@@ -123,49 +123,38 @@ def generate_person(model):
         model.at_bus_stop.append(new_tp)
         
 
-def generate_blocker(model, blocker_type, self_distruct_timer, road_segment):
+def generate_blocker(model, blocker_type, self_distruct_timer, seg_i):
         print(f"{blocker_type} at step {model.steps}")
-        new_blocker = model.agent_cls['blocker'].create_agents(model=model, n=1, blocker_type=blocker_type, self_distruct_timer=self_distruct_timer, road_segment=road_segment)
+        new_blocker = model.agent_cls['blocker'].create_agents(model=model, n=1, blocker_type=blocker_type, self_distruct_timer=self_distruct_timer, seg_i=seg_i)
         model.agents.add(*new_blocker)
         model.blockers_list.append(new_blocker[0])
 
+def pick_occupied_segment(model):
+    if not model.vehicles_list:
+        return None
+    v = model.random.choice(model.vehicles_list)
+    seg_i = v.path_index
+    return seg_i
+
 def generate_crash(model): 
     if model.crashes == 0:
-        # no crashes to generate end the function
         return                     
 
-    # Step 1: filter to road segments that have a non-empty `vehicles_here`
-    occupied_segments = model.agents.select(
-            lambda s: hasattr(s, "vehicles_here") and len(getattr(s, "vehicles_here", [])) > 0,
-            agent_type=model.agent_cls['road'],
-        )
-
-    # Step 2: pick one at random (or None if none exist)
-    segment = model.random.choice(list(occupied_segments)) if len(occupied_segments) else None
-    if segment:
-        generate_blocker(model=model, blocker_type="crash", self_distruct_timer=model.random.randint(60, 300), road_segment=segment) # this is where blocker duration is set, currently between 1 and 5 mins
-    #else:
-        #print(f"No occupied segments available for crash at step {model.steps}.")
+    seg_i = pick_occupied_segment(model)
+    if seg_i:
+        generate_blocker(model=model, blocker_type="crash", self_distruct_timer=model.random.randint(60, 300), seg_i=seg_i) # this is where blocker duration is set, currently between 1 and 5 mins
 
 def generate_canyon_closure(model):
     if len(model.canyon_closures) == 0:
         return
     
     closure = model.canyon_closures.iloc[0]
-    if closure.closure_step == model.steps:
-        # Find the road segment agent with the matching unique_id
-        segment = next(
-            (agent for agent in model.agents.select(agent_type=model.agent_cls['road'])
-             if agent.unique_id == closure.road_section),
-            None
-        )
-
-        if segment is not None:
+    if closure.closure_step <= model.steps:
             generate_blocker(
                 model=model,
                 blocker_type="canyon_closure",
                 self_distruct_timer=closure.duration,
-                road_segment=segment
+                seg_i=closure.road_section
             )
 
             if not model.canyon_closures.empty:

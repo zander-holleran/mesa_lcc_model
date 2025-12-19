@@ -209,7 +209,7 @@ class TrafficModel(Model):
     def update_next_agents(self):
         # 1) Collect candidates once (avoid AgentSet scans inside per-agent code)
         vehicles = self.vehicles_list
-        blockers = list(self.agents.select(agent_type=self.agent_cls["blocker"]))
+        blockers = self.blockers_list
         next_agents = vehicles + blockers
 
         if not next_agents:
@@ -269,7 +269,7 @@ class TrafficModel(Model):
             remainder=self.remainder,
             rng=self.random
         )
-        
+
         self.total_crashes += self.crashes
 
         # will generate a blocker if crashes > 0
@@ -281,10 +281,7 @@ class TrafficModel(Model):
         if (self.steps % self.collect_every_n) == 0:
             self.datacollector.collect(self)
 
-        # end of step house keeping
-        #clear vehicles here from the roads - necessary for road segment analysis 
-        self.agents.select(agent_type=RoadSegmentAgent).do("clear_vehicles")
-            
+        # end of step house keeping            
         self.max_steps_check()
         self.max_persons_check()
 
