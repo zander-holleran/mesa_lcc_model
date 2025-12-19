@@ -6,9 +6,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Protocol
 
+import json
 import geopandas as gpd
 import numpy as np
 import pandas as pd
+import pickle
 import warnings
 
 
@@ -16,6 +18,8 @@ from traffic.model.traffic_model import TrafficModel
 from traffic.utils import analysis_utils as au
 
 from season.configs import SeasonConfig
+
+
 
 
 class SeasonOrchestrator:
@@ -42,7 +46,6 @@ class SeasonOrchestrator:
             print(f"Season outputs will be saved to: {self.output_dir}")
             self.output_dir.mkdir(parents=True, exist_ok=True)
 
-    
         self.last_model_run = None
         self._next_day_ix = 0
 
@@ -57,26 +60,18 @@ class SeasonOrchestrator:
         for day_cfg in self.config.day_params:
             self.run_day(day_cfg)
 
+        season_summary = self._compute_season_summary()
+
         if self.store_data:
-            log_df = self.get_trip_log_df()
-            if log_df is not None:
-                log_df_path = self.output_dir / f"trip_log.parquet"
-                log_df.to_parquet(log_df_path)
+            self._save_config()
+            self._save_season_summary(season_summary)
 
-            summary_df = self.get_day_summary_df()
-            if summary_df is not None:
-                summary_df_path = self.output_dir / f"day_summary.parquet"
-                summary_df.to_parquet(summary_df_path)
+            self._save_df_if_exists(self.get_trip_log_df(), "trip_log.parquet")
+            self._save_df_if_exists(self.get_day_summary_df(), "day_summary.parquet")
+            self._save_df_if_exists(self.get_season_person_log_df(), "season_person_log.parquet")
+            self._save_df_if_exists(self.get_sp_day_summary_df(), "sp_day_summary.parquet")
 
-            sp_log_df = self.get_season_person_log_df()
-            if sp_log_df is not None:
-                sp_log_df_path = self.output_dir / f"season_person_log.parquet"
-                sp_log_df.to_parquet(sp_log_df_path)
-
-            sp_summary_df = self.get_sp_day_summary_df()
-            if sp_summary_df is not None:
-                sp_summary_df_path = self.output_dir / f"sp_day_summary.parquet"
-                sp_summary_df.to_parquet(sp_summary_df_path)
+        
 
     def run_day(self, day_cfg=None):
         """
@@ -103,23 +98,8 @@ class SeasonOrchestrator:
 
         self._append_day_trip_log(day_index)
         self._append_season_person_log(day_index)
-        summary = self.compute_day_summary(day_index)
-        _ = self.compute_sp_day_summary(day_index)
-
-        # simple print for now
-        if summary is not None:
-            print(
-                f"Day {day_index}: "
-                f"avg_cost=${summary['avg_realized_cost']:.1f}, "
-                f"N={summary['total_persons']}, "
-                f"bus_share={summary['share_bus']:.2f}, "
-                f"avg_tt_bus={summary['avg_tt_bus']:.1f} min, "
-                f"avg_tt_car={summary['avg_tt_car']:.1f} min, "
-                f"avg_toll_car=${summary['avg_toll_car']:.2f}, "
-                f"Total toll=${summary['total_toll_car']:.2f}" 
-                f"Avg_cumtime_lost={summary['avg_cum_time_lost']:.1f} min" 
-
-            )
+        self._compute_day_summary(day_index)
+        _ = self.compute_sp_day_summary(day_index)            
 
         if self.store_data:
             self._save_datacollector_outputs(day_index, tm)
@@ -190,7 +170,6 @@ class SeasonOrchestrator:
         - realized_cost
         """
         for sp in self.season_persons:
-            # adjust "pid" to whatever your SeasonPerson id attribute is
             person_id = getattr(sp, "person_id", None)
 
             for rec in getattr(sp, "history", []):
@@ -215,7 +194,9 @@ class SeasonOrchestrator:
                 snapshot[attr] = copy.deepcopy(val)
             self.season_person_log_rows.append(snapshot)
 
-    def compute_day_summary(self, day_index):
+
+
+    def _compute_day_summary(self, day_index):
         """
         Compute summary stats for a single day from trip_log_rows.
         Returns a dict; also appends it to self.day_summaries.
@@ -239,8 +220,10 @@ class SeasonOrchestrator:
         share_bus = len(bus_df) / total_persons if total_persons > 0 else 0.0
 
         # total pop metrics
-        avg_cumtime_lost_min   = day_df["cumtime_lost_min"].mean()
-        avg_realized_cost       = day_df["realized_cost"].mean() 
+        avg_tt                = day_df["realized_tt"].mean()
+        avg_cumtime_lost_min  = day_df["cumtime_lost_min"].mean()
+        avg_realized_cost     = day_df["realized_cost"].mean() 
+        avg_realized_cost_vot_standardized = day_df["realized_tt"].mean() * self.config.population_params.value_of_time.median() + day_df["toll_paid"].mean()
 
         # bus metrics
         avg_wait_bus          = bus_df["wait_time"].mean()
@@ -256,11 +239,12 @@ class SeasonOrchestrator:
         avg_cumlost_car       = car_df["cumtime_lost_min"].mean()
         avg_realized_cost_car = bus_df["realized_cost"].mean() 
 
-
         summary = {
             "day_index": day_index,
+            "avg_tt":avg_tt,
             "avg_cum_time_lost": avg_cumtime_lost_min,
             "avg_realized_cost": avg_realized_cost,
+            "avg_realized_cost_vot_standardized":avg_realized_cost_vot_standardized,
             "total_persons": total_persons,
             "share_bus": share_bus,
             "avg_wait_bus": avg_wait_bus,
@@ -276,6 +260,21 @@ class SeasonOrchestrator:
         }
 
         self.day_summaries.append(summary)
+
+        print(
+                f"Day:{day_index}: "
+                f"N:{summary['total_persons']}, "
+                f"Avg TT:{summary['avg_tt']:.1f} min, "
+                f"Avg_cumtime_lost:{summary['avg_cum_time_lost']:.1f} min, " 
+                f"Avg Cost (VOT standardized):${summary['avg_realized_cost_vot_standardized']:.1f}, "
+                f"Avg Realized Cost:${summary['avg_realized_cost']:.1f}, "
+                f"bus_share:{summary['share_bus']:.2f}, "
+                f"avg_tt_bus:{summary['avg_tt_bus']:.1f} min, "
+                f"avg_tt_car:{summary['avg_tt_car']:.1f} min, "
+                f"avg_toll_car:${summary['avg_toll_car']:.2f}, "
+                f"Total toll:${summary['total_toll_car']:.2f}, " 
+                "\n" 
+            )
         return summary
 
     def compute_sp_day_summary(self, day_index):
@@ -314,6 +313,108 @@ class SeasonOrchestrator:
 
         self.sp_day_summaries.append(sp_summary)
         return sp_summary
+    
+    def _compute_season_summary(self):
+        """
+        Aggregate multi-day metrics and print a season summary.
+        """
+        if not self.trip_log_rows:
+            print("No trips recorded; season summary is empty.")
+            return None
+
+        df = pd.DataFrame(self.trip_log_rows)
+        days_run = df["day_index"].nunique()
+        total_trips = len(df)
+        bus_mask = df["mode"] == "bus"
+        car_mask = df["mode"] == "car"
+
+        percent_bus = (bus_mask.sum() / total_trips * 100) if total_trips > 0 else 0.0
+        avg_tt = df['realized_tt'].mean()
+        avg_cost_all = df["realized_cost"].mean()
+        avg_marginal_cost_vot_standarized = max(df["realized_tt"].mean()-20, 0) * self.config.population_params.value_of_time.median() + df["toll_paid"].mean()
+        avg_cost_all_vot_standarized = df["realized_tt"].mean() * self.config.population_params.value_of_time.median() + df["toll_paid"].mean()
+        total_toll = df["toll_paid"].sum()
+
+        avg_cost_bus = df.loc[bus_mask, "realized_cost"].mean() if bus_mask.any() else float("nan")
+        avg_cost_car = df.loc[car_mask, "realized_cost"].mean() if car_mask.any() else float("nan")
+        avg_toll_car = df.loc[car_mask, "toll_paid"].mean() if car_mask.any() else float("nan")
+
+        summary = {
+            "days_run": days_run,
+            "total_trips": total_trips,
+            'avg_tt':avg_tt,
+            'avg_marginal_cost_vot_standarized':avg_marginal_cost_vot_standarized,
+            "avg_cost_all_vot_standardized": avg_cost_all_vot_standarized,
+            "avg_cost_all": avg_cost_all,
+            "avg_cost_bus": avg_cost_bus,
+            "avg_cost_car": avg_cost_car,
+            "total_toll_revenue": total_toll,
+            "avg_toll_car": avg_toll_car,
+            "percent_bus_share": percent_bus,
+        }
+
+        print( 
+            f"Season Summary - Days Run: {days_run}, "
+            f"Total Trips: {total_trips}, "
+            f"\nAvg TT (all): {avg_tt:.2f}, "
+            "\n--- Cost Metrics --- "
+            f"\n     Marginal, Std VOT: ${avg_marginal_cost_vot_standarized:.2f}, "
+            f"\n     Std VOT: ${avg_cost_all_vot_standarized:.2f}, "
+            f"\n     All, Agent VOT: ${avg_cost_all:.2f}, "
+            f"\n     Bus, Agent VOT: ${avg_cost_bus:.2f}, "
+            f"\n     Car, Agent VOT: ${avg_cost_car:.2f}, "
+            "\n--- Tolling Metrics --- "
+            f"\nAvg Toll Cars: ${avg_toll_car:.2f}"
+            f"\nTotal Revenue: ${total_toll:.2f}"
+        )
+
+        return summary
+
+    def _save_season_summary(self, season_summary: dict):
+        # infer season_id from output_dir name (outputs/{season_id})
+        season_id = getattr(self, "season_id", self.output_dir.name)
+
+        # add season_id into the summary (helps the CSV log a lot)
+        season_summary = dict(season_summary)
+        season_summary["season_id"] = season_id
+
+        # 1) per-season JSON in outputs/{season_id}/
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        json_path = self.output_dir / "season_summary.json"
+        json_path.write_text(json.dumps(season_summary, indent=2))
+
+        # 2) append to data/season_summary_log.csv, expanding columns as needed
+        data_dir = Path("data")
+        data_dir.mkdir(parents=True, exist_ok=True)
+        csv_path = data_dir / "season_summary_log.csv"
+
+        if csv_path.exists():
+            df = pd.read_csv(csv_path)
+
+            existing_cols = list(df.columns)
+            new_cols = [k for k in season_summary.keys() if k not in existing_cols]
+            df = df.reindex(columns=existing_cols + new_cols)
+
+            df.loc[len(df)] = {c: season_summary.get(c, None) for c in df.columns}
+        else:
+            df = pd.DataFrame([season_summary])
+
+        df.to_csv(csv_path, index=False)
+
+    def _save_config(self):
+        """Persist the SeasonConfig object next to other outputs."""
+        if self.output_dir is None:
+            return
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        config_path = self.output_dir / "season_config.pkl"
+        with config_path.open("wb") as fh:
+            pickle.dump(self.config, fh, protocol=pickle.HIGHEST_PROTOCOL)
+
+    def _save_df_if_exists(self, df, filename: str):
+        if df is None:
+            return
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        df.to_parquet(self.output_dir / filename)
 
 # ----------------------------------------------------------------------
 # -------------------------  get df functions  -------------------------

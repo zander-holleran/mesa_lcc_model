@@ -48,7 +48,7 @@ class SeasonPerson:
         return prior + eta * (realized_tt - prior)
     
     @staticmethod
-    def compute_experience_beliefs(**kwargs):    # how fast uncertainty grows with staleness
+    def compute_experience_beliefs(**kwargs):   
         travel_data = kwargs.get("travel_data", [])
         current_day = kwargs.get("current_day", 0)
         time_decay_rate = kwargs.get("time_decay_rate", 0.1)
@@ -57,7 +57,6 @@ class SeasonPerson:
         staleness_scale = kwargs.get("staleness_scale", 0.05)
         
         if not travel_data:
-            # no data case: return prior and base uncertainty - likley only used on day 0
             expected_tt, travel_time_uncertainty = (travel_time_prior, 1.0/prior_weight)
             return expected_tt, travel_time_uncertainty
         

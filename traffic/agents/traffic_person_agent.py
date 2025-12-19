@@ -19,7 +19,7 @@ class TrafficPersonAgent(Agent):
         if not isinstance(season_person, SeasonPerson):
             raise TypeError(f"season_person must be SeasonPerson, got {type(season_person)!r}")
 
-        self.status = "traveling"  # or "arrived"
+        self.status = "traveling"  
 
         # traits / beliefs snapshot
         self.value_of_time = season_person.value_of_time
@@ -56,8 +56,8 @@ class TrafficPersonAgent(Agent):
             experience_weight,
             toll,
         ):
-            effective_tt = expected_travel_time - self.uncertainty_multiplier * travel_time_uncertainty
-            return value_of_time * experience_weight * effective_tt + toll
+        effective_tt = expected_travel_time - self.uncertainty_multiplier * travel_time_uncertainty
+        return value_of_time * experience_weight * effective_tt + toll
 
     def decide_mode(self) -> str:
         car_cost = self.compute_expected_generalized_cost(
@@ -67,6 +67,7 @@ class TrafficPersonAgent(Agent):
             experience_weight=self.experience_weight_car,
             toll=self.model.current_toll_car,
         )
+
         bus_cost = self.compute_expected_generalized_cost(
             expected_travel_time=self.expected_tt_bus,
             travel_time_uncertainty=self.tt_unc_bus,
@@ -74,6 +75,7 @@ class TrafficPersonAgent(Agent):
             experience_weight=self.experience_weight_bus,
             toll=self.model.current_toll_bus,
         )
+        
         return "car" if car_cost <= bus_cost else "bus"
     
     # ---------- trip completion hook ----------
