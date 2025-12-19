@@ -70,7 +70,8 @@ def generate_person(model):
         return
     
     season_person = pick_season_person_for_trip(model)
-    any_unfinished = any(getattr(a, "status", None) != "arrived" for a in model.agents.select(agent_type=model.agent_cls['traffic_person']))
+    tp_list = model.traffic_persons_list
+    any_unfinished = len(tp_list) > 0
     
     if season_person is None and not any_unfinished:
         return
@@ -97,6 +98,7 @@ def generate_person(model):
     )[0]
   
     model.agents.add(new_tp)
+    tp_list.append(new_tp)
     model.person_counter += 1
     new_tp.created_step = model.steps
     

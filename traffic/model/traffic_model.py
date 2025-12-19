@@ -98,6 +98,7 @@ class TrafficModel(Model):
         self.car_counter = 0 
         self.bus_riders = 0 
         self.at_bus_stop = []
+        self.traffic_persons_list = []
         self.finished_agents = []
 
         # ===== Set up ContinuousSpace =====
@@ -292,6 +293,5 @@ class TrafficModel(Model):
     # do(self.vehicles_list, "step")
     # do(self.blockers_list, "tick")
    
-
 
 

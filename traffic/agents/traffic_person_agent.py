@@ -117,3 +117,10 @@ class TrafficPersonAgent(Agent):
             )
                 
         self.status = "arrived"
+
+        # Use getattr in case 'traffic_persons_list' is not present on the model (optional attribute)
+        if self.model.traffic_persons_list is not None:
+            try:
+                self.model.traffic_persons_list.remove(self)
+            except ValueError:
+                pass
