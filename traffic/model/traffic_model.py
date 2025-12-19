@@ -129,7 +129,7 @@ class TrafficModel(Model):
     # -~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~ END OF INIT -~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
     def max_persons_check(self):
     # Stop model when entire population has completed a trip 
-        if not self.season_person_pool and not any(getattr(a, "status", None) != "arrived" for a in self.agents.select(agent_type=self.agent_cls['traffic_person'])):
+        if not self.season_person_pool and not self.traffic_persons_list:
             print(f"{self.person_counter} people arrived stopping model.")
             self.running = False
     
@@ -208,7 +208,7 @@ class TrafficModel(Model):
 
     def update_next_agents(self):
         # 1) Collect candidates once (avoid AgentSet scans inside per-agent code)
-        vehicles = list(self.agents.select(agent_type=VehicleAgent))
+        vehicles = self.vehicles_list
         blockers = list(self.agents.select(agent_type=self.agent_cls["blocker"]))
         next_agents = vehicles + blockers
 
@@ -253,13 +253,23 @@ class TrafficModel(Model):
         all_vehicles.do("calculate_time_lost")  # cheeky add here to calculate time lost after speed calculations
 
         # Blocker actions
+        n = len(driving_vehicles)
+        if n:
+            avg_speed_mps = 0.0
+            for veh in driving_vehicles:
+                avg_speed_mps += veh.speed
+            avg_speed_mps /= n
+        else:
+            avg_speed_mps = 1.0
+
         self.crashes, self.remainder = self.should_crash_randomized_rounding(
             crashes_per_100k_vmt=self.crashes_per_100k_vmt,
-            num_cars=len(driving_vehicles),
-            avg_speed_mps=np.mean([veh.speed for veh in driving_vehicles]) if len(driving_vehicles) > 0 else 1,
+            num_cars=n,
+            avg_speed_mps=avg_speed_mps,
             remainder=self.remainder,
             rng=self.random
         )
+        
         self.total_crashes += self.crashes
 
         # will generate a blocker if crashes > 0
