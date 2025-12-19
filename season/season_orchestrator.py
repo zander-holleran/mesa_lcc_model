@@ -268,7 +268,6 @@ class SeasonOrchestrator:
                 f"Avg_cumtime_lost:{summary['avg_cum_time_lost']:.1f} min, " 
                 f"Avg Cost (VOT standardized):${summary['avg_realized_cost_vot_standardized']:.1f}, "
                 f"Avg Realized Cost:${summary['avg_realized_cost']:.1f}, "
-
                 f"bus_share:{summary['share_bus']:.2f}, "
                 f"avg_tt_bus:{summary['avg_tt_bus']:.1f} min, "
                 f"avg_tt_car:{summary['avg_tt_car']:.1f} min, "
@@ -332,36 +331,41 @@ class SeasonOrchestrator:
         percent_bus = (bus_mask.sum() / total_trips * 100) if total_trips > 0 else 0.0
         avg_tt = df['realized_tt'].mean()
         avg_cost_all = df["realized_cost"].mean()
+        avg_marginal_cost_vot_standarized = max(df["realized_tt"].mean()-20, 0) * self.config.population_params.value_of_time.median() + df["toll_paid"].mean()
         avg_cost_all_vot_standarized = df["realized_tt"].mean() * self.config.population_params.value_of_time.median() + df["toll_paid"].mean()
-
+        total_toll = df["toll_paid"].sum()
 
         avg_cost_bus = df.loc[bus_mask, "realized_cost"].mean() if bus_mask.any() else float("nan")
         avg_cost_car = df.loc[car_mask, "realized_cost"].mean() if car_mask.any() else float("nan")
-        total_toll = df["toll_paid"].sum()
+        avg_toll_car = df.loc[car_mask, "toll_paid"].mean() if car_mask.any() else float("nan")
 
         summary = {
             "days_run": days_run,
             "total_trips": total_trips,
             'avg_tt':avg_tt,
+            'avg_marginal_cost_vot_standarized':avg_marginal_cost_vot_standarized,
             "avg_cost_all_vot_standardized": avg_cost_all_vot_standarized,
             "avg_cost_all": avg_cost_all,
             "avg_cost_bus": avg_cost_bus,
             "avg_cost_car": avg_cost_car,
             "total_toll_revenue": total_toll,
+            "avg_toll_car": avg_toll_car,
             "percent_bus_share": percent_bus,
-
         }
 
         print( 
             f"Season Summary - Days Run: {days_run}, "
             f"Total Trips: {total_trips}, "
             f"\nAvg TT (all): {avg_tt:.2f}, "
-            "\n--- Avg Cost --- "
-            f"\n     All, std VOT: ${avg_cost_all_vot_standarized:.2f}, "
-            f"\n     All: ${avg_cost_all:.2f}, "
-            f"\n     Bus: ${avg_cost_bus:.2f}, "
-            f"\n     Car: ${avg_cost_car:.2f}, "
-            f"\nTotal Toll Revenue: ${total_toll:.2f}"
+            "\n--- Cost Metrics --- "
+            f"\n     Marginal, Std VOT: ${avg_marginal_cost_vot_standarized:.2f}, "
+            f"\n     Std VOT: ${avg_cost_all_vot_standarized:.2f}, "
+            f"\n     All, Agent VOT: ${avg_cost_all:.2f}, "
+            f"\n     Bus, Agent VOT: ${avg_cost_bus:.2f}, "
+            f"\n     Car, Agent VOT: ${avg_cost_car:.2f}, "
+            "\n--- Tolling Metrics --- "
+            f"\nAvg Toll Cars: ${avg_toll_car:.2f}"
+            f"\nTotal Revenue: ${total_toll:.2f}"
         )
 
         return summary
