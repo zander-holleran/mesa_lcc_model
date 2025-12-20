@@ -9,9 +9,11 @@ from tqdm import tqdm
 
 # Import my agents
 from traffic.agents import VehicleAgent, BlockerAgent, BusAgent, CarAgent, RoadSegmentAgent, TrafficPersonAgent
-
+from traffic.agents.vehicle_agent import build_empirical_accel_function
 # import my utils
 from traffic.utils import unit_conversion_utils as uc  # for get_mph, etc.
+import traffic.utils.distribution_utils as du
+
 
 # import other parts of model
 import traffic.model.reporting as rep
@@ -36,7 +38,7 @@ class TrafficModel(Model):
 
         self.created_counts = defaultdict(int) # temp
 
-        self._np_rng = np.random.default_rng(seed)
+        self.rng = np.random.default_rng(seed)
 
         self.agent_cls = {
             "vehicle": VehicleAgent,
@@ -71,6 +73,14 @@ class TrafficModel(Model):
         self.traffic_percentile = traffic_percentile
         self.p_generate = p_generate  # Probability of new car each step
         self.max_persons = max_persons  # Maximum number of persons allowed
+
+        self.dist_acceptable_over = du.make_truncnorm(15, -2, 4, mean=3)
+        self.dist_ideal_distance_multiplier = du.make_truncnorm(2, 0.6, 0.3, mean=1)
+        self.dist_curve_response = du.make_truncnorm(0.95, 0.6, 0.1, mean=None)
+
+        # precompute accel curves once (101 buckets)
+        self.accel_curve_cache = [build_empirical_accel_function(p / 100) for p in range(101)]
+
 
         # ===== canyon closure perams =====
         if not canyon_closures or len(canyon_closures) == 0:
@@ -166,9 +176,7 @@ class TrafficModel(Model):
             new_remainder: float (carry this to the next call)
         """
         METERS_PER_100K_MILES = 160_934_400.0
-        if rng is None:
-            rng = np.random.default_rng()
-
+    
         meters_this_step = float(num_cars) * float(avg_speed_mps)
         lambda_step = (crashes_per_100k_vmt / METERS_PER_100K_MILES) * meters_this_step
 
@@ -234,7 +242,6 @@ class TrafficModel(Model):
         for a in agents:
             a.adjust_status()
 
-
     def do_adjust_speed(self, agents):
         for a in agents:
             a.adjust_speed()
@@ -294,7 +301,7 @@ class TrafficModel(Model):
             num_cars=n,
             avg_speed_mps=avg_speed_mps,
             remainder=self.remainder,
-            rng=self.random
+            rng=self.rng
         )
 
         self.total_crashes += self.crashes

@@ -16,7 +16,10 @@ def build_empirical_accel_function(pctile, mean_shift=-.2 , var_streach=1.3):
     Returns:
         accel(speed_mph): callable function
     """
-    trimmed_pctile = np.clip(pctile, .07, .95)
+    
+    if pctile < .07: trimmed_pctile = .07
+    elif pctile > .95: trimmed_pctile = .95
+    else: trimmed_pctile = pctile
     og_means = [1, 2.5, 2, 1.5]
     og_vars = [.35, .4, .4, .3]
 
@@ -120,7 +123,7 @@ class VehicleAgent(Agent):
         self.acceptable_over = None
         self.curve_responce = None
         self.performance = .5
-        self.accel_curve = build_empirical_accel_function(self.performance)
+        self.accel_curve = self.model.accel_curve_cache[int(self.performance * 100)]
 
         # passengers list
         self.passengers = []
@@ -132,42 +135,9 @@ class VehicleAgent(Agent):
         self.cumtime_lost_sec += frac_seconds_lost
 
 
-    # def get_next_agent(self): 
-    #     '''
-    #     Used in the get_gap function
-    #     Takes self, checks if a next_agent exists and status == driving, if so uses that, if not trys to find a new next agent. 
-    #     '''
-    #     # check if 1) next car is already saved & 2)it is driving. The secound check is to deal with when cars get removed at the end. This works because self.next_agent existing is tested first
-    #     if self.next_agent and self.next_agent.status != 'arrived':
-    #         return
-    #     # Find the closest vehicle ahead (or None if there isn't one)
-    #     vehicles_ahead = self.model.agents.select(
-    #         lambda a: a.distance_traveled > self.distance_traveled,
-    #         agent_type=(VehicleAgent, self.model.agent_cls['blocker']),
-    #     )
-
-    #     self.next_agent = min(vehicles_ahead, key=lambda a: a.distance_traveled, default=None)
-
     def reset_next_agent(self):
         '''used at verious points to clear the next_agent var'''
         self.next_agent = None
-
-    # def get_gap(self):
-    #         """
-    #         Returns:
-    #             ideal_gap: float — the desired following distance (m)
-    #             gap: float — distance to the closest vehicle ahead (m)
-
-    #         Used in the adjust_speed function
-    #         """
-    #         ideal_gap = max(self.speed * self.ideal_distance_multiplier,5)
-    #         # if a agent exists then measure the gap
-    #         if self.next_agent: 
-    #             gap = self.model.space.get_distance(self.pos, self.next_agent.pos)
-    #         else:
-    #             gap = 9999999 # effectively infinite gap if no next agent
-    #         self.ideal_gap = ideal_gap
-    #         self.gap = gap
 
     # Fast clip for scalars
     def _clip01(self, x: float) -> float:
@@ -221,7 +191,7 @@ class VehicleAgent(Agent):
         
         # Add some human-like noise
         noise = np.random.normal(0, .1)
-        break_pct =  np.clip(base + noise, 0, 1)
+        break_pct =  self._clip01(base + noise)
 
         deceleration = break_pct * 8 # <- this is acting as max decel in mps 
         return deceleration
@@ -233,7 +203,7 @@ class VehicleAgent(Agent):
         if speed < speed_limit:
             # this should never be triggered but i added anyway to make sure it didnt trip an error
             return 0
-        mph_over = uc.get_mph(speed)-uc.get_mph(speed_limit) 
+        mph_over = speed-speed_limit
         if mph_over > 7: 
             return 1.1 
         elif mph_over > 2:
@@ -275,21 +245,20 @@ class VehicleAgent(Agent):
             self.speed -= self.less_smooth_brake(gap=self.gap, ideal_gap=self.ideal_gap)
 
         # 3) if outside the jitter threashhold see if the car is above speed limit, if so break
-        elif self.speed > self.implicit_speed_limit_mps:
+        elif self.speed > self.implicit_speed_limit_mps + 1e-6:
             self.driving_action = 'speed_limit_break'
             self.break_cooldown = 3
-            self.speed -= self.speed_limit_brake(speed_limit=self.implicit_speed_limit_mps, speed=self.speed)
+            self.speed -= self.speed_limit_brake(speed_limit=self.implicit_speed_limit, speed=speed_mph)
             
         # 4) if outside the jitter threashhold & below speed limit & max speed then speed up 
-        elif self.break_cooldown in [4,5]:
+        elif self.break_cooldown >= 4:
             self.driving_action = 'coast'
             self.break_cooldown -= 1 
         
-        elif self.break_cooldown in [1,2,3]: # self.break_cooldown will be 3,2,1
+        elif self.break_cooldown >= 1:
             self.driving_action = 'slow_accelerate'
             self.speed+= self.accel_curve(speed_mph) * ((4-self.break_cooldown)/4)
             self.break_cooldown -= 1 
-
         else:
             self.driving_action = 'accelerate'
             self.speed+= self.accel_curve(speed_mph)
