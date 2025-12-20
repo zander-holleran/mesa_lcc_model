@@ -12,7 +12,8 @@ class RoadSegmentAgent(Agent):
         self.road_section = road_section
         self.curvature = curvature
         self.linked_coord = linked_coord
-        self.vehicles_here = []
         self.distance_traveled = distance_traveled
+        
+        self.model.created_counts[type(self).__name__] += 1 # temp 
+
     
-    def clear_vehicles(self): self.vehicles_here.clear()

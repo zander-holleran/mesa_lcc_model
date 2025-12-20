@@ -9,14 +9,17 @@ from tqdm import tqdm
 
 # Import my agents
 from traffic.agents import VehicleAgent, BlockerAgent, BusAgent, CarAgent, RoadSegmentAgent, TrafficPersonAgent
-
+from traffic.agents.vehicle_agent import build_empirical_accel_function
 # import my utils
 from traffic.utils import unit_conversion_utils as uc  # for get_mph, etc.
+import traffic.utils.distribution_utils as du
+
 
 # import other parts of model
 import traffic.model.reporting as rep
 import traffic.model.generate as gen 
 import traffic.model.init_helpers as ih 
+from collections import defaultdict
 
 
 class TrafficModel(Model):
@@ -33,7 +36,9 @@ class TrafficModel(Model):
                  ):
         super().__init__(seed=seed)
 
-        self._np_rng = np.random.default_rng(seed)
+        self.created_counts = defaultdict(int) # temp
+
+        self.rng = np.random.default_rng(seed)
 
         self.agent_cls = {
             "vehicle": VehicleAgent,
@@ -68,6 +73,14 @@ class TrafficModel(Model):
         self.traffic_percentile = traffic_percentile
         self.p_generate = p_generate  # Probability of new car each step
         self.max_persons = max_persons  # Maximum number of persons allowed
+
+        self.dist_acceptable_over = du.make_truncnorm(15, -2, 4, mean=3)
+        self.dist_ideal_distance_multiplier = du.make_truncnorm(2, 0.6, 0.3, mean=1)
+        self.dist_curve_response = du.make_truncnorm(0.95, 0.6, 0.1, mean=None)
+
+        # precompute accel curves once (101 buckets)
+        self.accel_curve_cache = [build_empirical_accel_function(p / 100) for p in range(101)]
+
 
         # ===== canyon closure perams =====
         if not canyon_closures or len(canyon_closures) == 0:
@@ -112,8 +125,8 @@ class TrafficModel(Model):
         )
 
         # place the roadsegments on the space
-        for agent, point in zip(self.road_segments, road_gdf.geometry):
-            self.space.place_agent(agent, (point.x, point.y))
+        for agent, (x, y) in zip(self.road_segments, self.rs_pos):
+            self.space.place_agent(agent, (x, y))
 
         # set up the reporters
         if self.batchrun: 
@@ -124,11 +137,12 @@ class TrafficModel(Model):
         # agent lists
         self.vehicles_list = []
         self.blockers_list = []
+        self.traffic_persons_list = []
 
     # -~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~ END OF INIT -~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
     def max_persons_check(self):
     # Stop model when entire population has completed a trip 
-        if not self.season_person_pool and not any(getattr(a, "status", None) != "arrived" for a in self.agents.select(agent_type=self.agent_cls['traffic_person'])):
+        if not self.season_person_pool and not self.traffic_persons_list:
             print(f"{self.person_counter} people arrived stopping model.")
             self.running = False
     
@@ -162,9 +176,7 @@ class TrafficModel(Model):
             new_remainder: float (carry this to the next call)
         """
         METERS_PER_100K_MILES = 160_934_400.0
-        if rng is None:
-            rng = np.random.default_rng()
-
+    
         meters_this_step = float(num_cars) * float(avg_speed_mps)
         lambda_step = (crashes_per_100k_vmt / METERS_PER_100K_MILES) * meters_this_step
 
@@ -207,8 +219,8 @@ class TrafficModel(Model):
 
     def update_next_agents(self):
         # 1) Collect candidates once (avoid AgentSet scans inside per-agent code)
-        vehicles = list(self.agents.select(agent_type=VehicleAgent))
-        blockers = list(self.agents.select(agent_type=self.agent_cls["blocker"]))
+        vehicles = self.vehicles_list
+        blockers = self.blockers_list
         next_agents = vehicles + blockers
 
         if not next_agents:
@@ -224,6 +236,28 @@ class TrafficModel(Model):
             a.next_agent = na
             a.gap = (na.distance_traveled - a.distance_traveled) if na is not None else float("inf")
     
+     # -~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~ Agent method loopers  -~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
+    # vehicles
+    def do_adjust_status(self, agents):
+        for a in agents:
+            a.adjust_status()
+
+    def do_adjust_speed(self, agents):
+        for a in agents:
+            a.adjust_speed()
+
+    def do_move_along_path(self, agents):
+        for a in agents:
+            a.move_along_path()
+
+    def do_calculate_time_lost(self, agents):
+        for a in agents:
+            a.calculate_time_lost()
+    # blockers
+    def do_tick(self, agents):
+            for a in agents:
+                a.tick()
+
     # -~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~ THE STEP  -~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
     def step(self):
         # Toll update
@@ -238,42 +272,51 @@ class TrafficModel(Model):
         gen.generate_person(self)
         gen.generate_new_bus(self)
 
-        # look ahead and assign who/waht the next agent is
-        all_vehicles = self.agents.select(agent_type=VehicleAgent)
+        # vehicle functions
+        all_vehicles = self.vehicles_list
         self.update_next_agents()
-        all_vehicles.do('adjust_status')  # Set Status
+        self.do_adjust_status(all_vehicles)  
 
+        driving_vehicles = []
+        for v in all_vehicles:
+            if v.status == "driving" or v.status == "slowing":
+                driving_vehicles.append(v)
 
-        # Driving actions (mostly)
-        driving_vehicles = self.agents.select(lambda a: a.status in ('driving','slowing'), agent_type=VehicleAgent)
-        driving_vehicles.do('get_speed_limit')  # Set Speed Limit
-        driving_vehicles.do("adjust_speed")
-        driving_vehicles.do("move_along_path")
-        all_vehicles.do("calculate_time_lost")  # cheeky add here to calculate time lost after speed calculations
+        self.do_adjust_speed(driving_vehicles)
+        self.do_move_along_path(driving_vehicles)
+        self.do_calculate_time_lost(all_vehicles)
 
         # Blocker actions
+        n = len(driving_vehicles)
+        if n:
+            avg_speed_mps = 0.0
+            for veh in driving_vehicles:
+                avg_speed_mps += veh.speed
+            avg_speed_mps /= n
+        else:
+            avg_speed_mps = 1.0
+
         self.crashes, self.remainder = self.should_crash_randomized_rounding(
             crashes_per_100k_vmt=self.crashes_per_100k_vmt,
-            num_cars=len(driving_vehicles),
-            avg_speed_mps=np.mean([veh.speed for veh in driving_vehicles]) if len(driving_vehicles) > 0 else 1,
+            num_cars=n,
+            avg_speed_mps=avg_speed_mps,
             remainder=self.remainder,
-            rng=self.random
+            rng=self.rng
         )
+
         self.total_crashes += self.crashes
 
         # will generate a blocker if crashes > 0
         gen.generate_crash(self)
         gen.generate_canyon_closure(self)
-        self.agents.select(agent_type=BlockerAgent).do("tick") # decrement blocker timers
+        
+        self.do_tick(self.blockers_list)
 
         # Collect data
         if (self.steps % self.collect_every_n) == 0:
             self.datacollector.collect(self)
 
-        # end of step house keeping
-        #clear vehicles here from the roads - necessary for road segment analysis 
-        self.agents.select(agent_type=RoadSegmentAgent).do("clear_vehicles")
-            
+        # end of step house keeping            
         self.max_steps_check()
         self.max_persons_check()
 
@@ -282,15 +325,6 @@ class TrafficModel(Model):
             if not getattr(self, "running", True):
                 break
             self.step()
-    
-
-    # def fast_do(agents, method_name, *args, **kwargs):
-    #     # iterate over a snapshot in case the list mutates (agents remove themselves, etc.)
-    #     for a in list(agents):
-    #         getattr(a, method_name)(*args, **kwargs)
-
-    # do(self.vehicles_list, "step")
-    # do(self.blockers_list, "tick")
    
 
 

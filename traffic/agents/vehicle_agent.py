@@ -16,7 +16,10 @@ def build_empirical_accel_function(pctile, mean_shift=-.2 , var_streach=1.3):
     Returns:
         accel(speed_mph): callable function
     """
-    trimmed_pctile = np.clip(pctile, .07, .95)
+    
+    if pctile < .07: trimmed_pctile = .07
+    elif pctile > .95: trimmed_pctile = .95
+    else: trimmed_pctile = pctile
     og_means = [1, 2.5, 2, 1.5]
     og_vars = [.35, .4, .4, .3]
 
@@ -62,6 +65,9 @@ def build_empirical_accel_function(pctile, mean_shift=-.2 , var_streach=1.3):
 class VehicleAgent(Agent):
     def __init__(self, model):
         super().__init__(model)
+
+        self.model.created_counts[type(self).__name__] += 1 # temp 
+
          # 1) freeze this vehicle's spawn and place it
         p_start = np.array(model.start_point, dtype=float)
         self.model.space.place_agent(self, tuple(p_start))
@@ -88,6 +94,7 @@ class VehicleAgent(Agent):
         self._seg_len = seg_len
         self._seg_dir = seg_vec / seg_len[:, None]
         self.path_index = 0               # 0..(n-2): which segment we're on
+        self._last_sl_index = -1
         self._s = 0.0                     # distance traveled within current segment
 
         # ---- 5) For data collection ----
@@ -106,6 +113,7 @@ class VehicleAgent(Agent):
         self.driving_action = None # what the car did this step, accelerate, break, coast, etc
         self.posted_speed_limit = None # the posted speed limit of the road segment the car is currently on
         self.implicit_speed_limit = None   # the speed limit adjusted for curvature, acceptable_over
+        self.implicit_speed_limit_mps = None
         self.speed_delta = 0  # difference between current speed and desired speed, usually neg (mpg)
         self.cumtime_lost_sec = 0.0  # cumulative time lost due to traffic (seconds)
         self.time_lost_sec = 0.0  # time lost that step (seconds)
@@ -115,7 +123,7 @@ class VehicleAgent(Agent):
         self.acceptable_over = None
         self.curve_responce = None
         self.performance = .5
-        self.accel_curve = build_empirical_accel_function(self.performance)
+        self.accel_curve = self.model.accel_curve_cache[int(self.performance * 100)]
 
         # passengers list
         self.passengers = []
@@ -127,42 +135,9 @@ class VehicleAgent(Agent):
         self.cumtime_lost_sec += frac_seconds_lost
 
 
-    def get_next_agent(self): 
-        '''
-        Used in the get_gap function
-        Takes self, checks if a next_agent exists and status == driving, if so uses that, if not trys to find a new next agent. 
-        '''
-        # check if 1) next car is already saved & 2)it is driving. The secound check is to deal with when cars get removed at the end. This works because self.next_agent existing is tested first
-        if self.next_agent and self.next_agent.status != 'arrived':
-            return
-        # Find the closest vehicle ahead (or None if there isn't one)
-        vehicles_ahead = self.model.agents.select(
-            lambda a: a.distance_traveled > self.distance_traveled,
-            agent_type=(VehicleAgent, self.model.agent_cls['blocker']),
-        )
-
-        self.next_agent = min(vehicles_ahead, key=lambda a: a.distance_traveled, default=None)
-
     def reset_next_agent(self):
         '''used at verious points to clear the next_agent var'''
         self.next_agent = None
-
-    def get_gap(self):
-            """
-            Returns:
-                ideal_gap: float — the desired following distance (m)
-                gap: float — distance to the closest vehicle ahead (m)
-
-            Used in the adjust_speed function
-            """
-            ideal_gap = max(self.speed * self.ideal_distance_multiplier,5)
-            # if a agent exists then measure the gap
-            if self.next_agent: 
-                gap = self.model.space.get_distance(self.pos, self.next_agent.pos)
-            else:
-                gap = 9999999 # effectively infinite gap if no next agent
-            self.ideal_gap = ideal_gap
-            self.gap = gap
 
     # Fast clip for scalars
     def _clip01(self, x: float) -> float:
@@ -186,7 +161,8 @@ class VehicleAgent(Agent):
         avg_sl = float((sl * w).sum())
         avg_cv = float((cv * w).sum())
 
-        # ----- curve_adjust (branchy, no numpy) -----
+        # ----- curve_adjust (branchy, no numpy) ----- 
+        #todo - look into this conceptually, this is meant to represent the faster you ARE going the more you should respond to cureves, NOT the faster the SL is the more you should respond to curves
         curve_effect  = self._clip01(avg_cv/90.0)
         if avg_sl <= 15.0:
             speed_effect = 0.0
@@ -197,10 +173,10 @@ class VehicleAgent(Agent):
         implicit_speed_limit_mph = curve_speed_limit_mph + self.acceptable_over
 
         # save
-        # posted speed limit of CURRENT segment (0-length slice safe)
         self.posted_speed_limit = float(self._seg_speed[i]) if i < self._seg_speed.size else float(self._seg_speed[-1])
         self.implicit_speed_limit = implicit_speed_limit_mph
-        # (function returns None, same as before)
+        self.implicit_speed_limit_mps = uc.get_mps(self.implicit_speed_limit)
+
     
     def less_smooth_brake(self, gap, ideal_gap):
         """
@@ -215,7 +191,7 @@ class VehicleAgent(Agent):
         
         # Add some human-like noise
         noise = np.random.normal(0, .1)
-        break_pct =  np.clip(base + noise, 0, 1)
+        break_pct =  self._clip01(base + noise)
 
         deceleration = break_pct * 8 # <- this is acting as max decel in mps 
         return deceleration
@@ -227,7 +203,7 @@ class VehicleAgent(Agent):
         if speed < speed_limit:
             # this should never be triggered but i added anyway to make sure it didnt trip an error
             return 0
-        mph_over = uc.get_mph(speed)-uc.get_mph(speed_limit) 
+        mph_over = speed-speed_limit
         if mph_over > 7: 
             return 1.1 
         elif mph_over > 2:
@@ -254,9 +230,11 @@ class VehicleAgent(Agent):
             
         # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~- The initial adjust speed ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-
     def adjust_speed(self):
-        ''' takes self from self uses'''
-        implicit_speed_limit_mps =  uc.get_mps(self.implicit_speed_limit)        
-        # save the current speed 
+        if self.path_index != self._last_sl_index:
+            self.get_speed_limit()
+            self._last_sl_index = self.path_index
+
+        speed_mph = uc.get_mph(self.speed)
         old_speed = self.speed 
         
         # 1) measues the gap to the next vehicle, if less than the ideal gap, applies the smooth breaking
@@ -267,24 +245,23 @@ class VehicleAgent(Agent):
             self.speed -= self.less_smooth_brake(gap=self.gap, ideal_gap=self.ideal_gap)
 
         # 3) if outside the jitter threashhold see if the car is above speed limit, if so break
-        elif self.speed > implicit_speed_limit_mps:
+        elif self.speed > self.implicit_speed_limit_mps + 1e-6:
             self.driving_action = 'speed_limit_break'
             self.break_cooldown = 3
-            self.speed -= self.speed_limit_brake(speed_limit=implicit_speed_limit_mps, speed=self.speed)
+            self.speed -= self.speed_limit_brake(speed_limit=self.implicit_speed_limit, speed=speed_mph)
             
         # 4) if outside the jitter threashhold & below speed limit & max speed then speed up 
-        elif self.break_cooldown in [4,5]:
+        elif self.break_cooldown >= 4:
             self.driving_action = 'coast'
             self.break_cooldown -= 1 
         
-        elif self.break_cooldown in [1,2,3]: # self.break_cooldown will be 3,2,1
+        elif self.break_cooldown >= 1:
             self.driving_action = 'slow_accelerate'
-            self.speed+= self.accel_curve(uc.get_mph(self.speed)) * ((4-self.break_cooldown)/4)
+            self.speed+= self.accel_curve(speed_mph) * ((4-self.break_cooldown)/4)
             self.break_cooldown -= 1 
-
         else:
             self.driving_action = 'accelerate'
-            self.speed+= self.accel_curve(uc.get_mph(self.speed))
+            self.speed+= self.accel_curve(speed_mph)
 
         # overwrites
         if (self.next_agent is not None) and ((self.speed - self.next_agent.speed) > self.gap):
@@ -302,7 +279,6 @@ class VehicleAgent(Agent):
     def move_along_path(self):
         """Advance along path by self.speed meters using a single path + index."""
         if self.speed <= 0.0:  # early out for not moving
-            # pin at the last point
             self.steps_taken += 1
             return
                     
@@ -331,10 +307,6 @@ class VehicleAgent(Agent):
         else:
             start_of_seg = self.path_xy[i]
             new_pos = start_of_seg + self._seg_dir[i] * s # this identifies the new pos as the start of the seg + the direction of the seg * how far into the seg you are (s)
-
-
-        if 0 <= i < len(self._rs):
-            self.road_segments[i].vehicles_here.append(self)
 
         # book keeping
         self.path_index = i
