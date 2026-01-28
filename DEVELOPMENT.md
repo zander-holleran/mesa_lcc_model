@@ -36,29 +36,51 @@ After functional changes:
 
 **IMPORTANT:** For any performance optimization or refactoring that should not change model behavior:
 
-1. **Before making changes:**
+#### Step 1: Save baselines (before making changes)
 ```bash
-   python tests/optimization_check.py --save-baseline
+python tests/optimization_check.py --save-baseline
+python tests/performance_free_flow.py --save-baseline --runs 1
+python tests/performance_congestion.py --save-baseline --runs 1
 ```
 
-2. **Make optimization changes**
+#### Step 2: Make optimization changes
 
-3. **After changes:**
+#### Step 3: Verify determinism (iterate until passing)
 ```bash
-   python tests/optimization_check.py --verify
+python tests/optimization_check.py --verify
 ```
-   - This compares: steps, crashes, finished agents, model time series, trip logs
-   - Shows performance impact (speedup/slowdown %)
-   - **ALL outputs must match** - if they differ, the optimization changed behavior
+- This compares: steps, crashes, finished agents, model time series, trip logs
+- **ALL outputs must match** - if they differ, the optimization changed behavior
+- If verification fails, fix the issue and re-run until it passes
 
-4. **Show verification results** before completing task
-
-5. **Clean up when done:**
+#### Step 4: Verify performance (after optimization_check passes)
 ```bash
-   python tests/optimization_check.py --clean
+python tests/performance_free_flow.py --verify --runs 1
+python tests/performance_congestion.py --verify --runs 1
+```
+- Reports: time change %, steps/sec change %
+- Confirms outputs still match baseline
+
+#### Step 5: Report results
+Show verification results including:
+- PASS/FAIL status for all three tests
+- Performance comparison (speedup/slowdown %)
+
+#### Step 6: Clean up baselines
+```bash
+python tests/optimization_check.py --clean
+python tests/performance_free_flow.py --clean
+python tests/performance_congestion.py --clean
 ```
 
 **Baseline files location:** `tests/baselines/`
+
+**Test configurations:**
+| Test | Persons | Days | Traffic | Purpose |
+|------|---------|------|---------|---------|
+| optimization_check | 1000 | 1 | 50th %ile | Quick determinism check |
+| performance_free_flow | 3000 | 3 | 50th %ile | Performance under normal traffic |
+| performance_congestion | 3000 | 3 | 90th %ile | Performance under heavy traffic |
 
 ---
 
