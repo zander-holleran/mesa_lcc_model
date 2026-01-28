@@ -17,10 +17,35 @@ Before implementing any feature:
 
 3. **Wait for approval** before coding
 
+## Git Workflow
+
+Before making any code changes:
+
+1. **Create a feature branch** from main:
+   ```bash
+   git checkout main
+   git pull origin main
+   git checkout -b feature/short-description
+   ```
+
+2. **Make commits** with clear messages on the feature branch
+
+3. **Push and create PR** when ready for review:
+   ```bash
+   git push -u origin feature/short-description
+   ```
+
+Branch naming conventions:
+- `feature/description` - new features
+- `fix/description` - bug fixes
+- `refactor/description` - code refactoring
+- `perf/description` - performance optimizations
+
 ## Implementation
 
 - Reference the plan file: `plan/feature-name.md`
 - Follow the approved approach
+- Work on your feature branch (not main)
 
 ## Testing Protocol
 
@@ -35,6 +60,11 @@ After functional changes:
 ### Optimization Changes Only
 
 **IMPORTANT:** For any performance optimization or refactoring that should not change model behavior:
+
+#### Step 0: Create a feature branch
+```bash
+git checkout -b perf/short-description
+```
 
 #### Step 1: Save baselines (before making changes)
 ```bash
