@@ -12,13 +12,12 @@ venv/
 # ignore data contents (keep directory structure)
 data/*
 !data/.gitkeep
-.DS_Store
-prof.stats
-
-# ignore notes folder
-notes/
 
 # ignore test baselines (generated locally, keep directory structure)
 tests/baselines/*
 !tests/baselines/.gitkeep
 
+notes/
+plans/
+.DS_Store
+prof.stats
