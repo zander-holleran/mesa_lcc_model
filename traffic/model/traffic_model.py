@@ -136,6 +136,7 @@ class TrafficModel(Model):
         self.blockers_list = []
         self.traffic_persons_list = []
 
+
     # -~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~ END OF INIT -~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
     def max_persons_check(self):
     # Stop model when entire population has completed a trip 
@@ -188,18 +189,16 @@ class TrafficModel(Model):
         tolling.update_tolls(self)
     
     def update_next_agents(self):
-        # 1) Collect candidates once (avoid AgentSet scans inside per-agent code)
-        vehicles = self.vehicles_list
-        blockers = self.blockers_list
-        next_agents = vehicles + blockers
+        """Update next_agent pointers by sorting all vehicles and blockers."""
+        next_agents = self.vehicles_list + self.blockers_list
 
         if not next_agents:
             return
 
-        # 2) Sort by along-road progress; tie-break by object id (stable)
-        next_agents.sort(key=lambda a: (a.distance_traveled, id(a)))
+        # Sort by distance, use unique_id for deterministic tie-breaking
+        next_agents.sort(key=lambda a: (a.distance_traveled, a.unique_id))
 
-        # Assign next_agent and gap for each vehicle (and blocker)
+        # Establish next_agent links
         last = len(next_agents) - 1
         for i, a in enumerate(next_agents):
             na = next_agents[i + 1] if i < last else None

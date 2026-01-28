@@ -189,8 +189,8 @@ class VehicleAgent(Agent):
         # Squared to overreact when too close
         base = force ** 2
         
-        # Add some human-like noise
-        noise = np.random.normal(0, .1)
+        # Add some human-like noise (uses model RNG for determinism)
+        noise = self.model.rng.normal(0, .1)
         break_pct =  self._clip01(base + noise)
 
         deceleration = break_pct * 8 # <- this is acting as max decel in mps 
