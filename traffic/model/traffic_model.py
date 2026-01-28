@@ -10,6 +10,7 @@ from tqdm import tqdm
 # Import my agents
 from traffic.agents import VehicleAgent, BlockerAgent, BusAgent, CarAgent, RoadSegmentAgent, TrafficPersonAgent
 from traffic.agents.vehicle_agent import build_empirical_accel_function
+from traffic.model import tolling 
 # import my utils
 from traffic.utils import unit_conversion_utils as uc  # for get_mph, etc.
 import traffic.utils.distribution_utils as du
@@ -64,7 +65,6 @@ class TrafficModel(Model):
         # ===== Tolling perams =====
         self.toll_mechanism = toll_mechanism
         self.toll_params = toll_params or {}
-
         self.current_toll_car = self.toll_params.get("car", 0.0)
         self.current_toll_bus = self.toll_params.get("bus", 0.0)
 
@@ -73,14 +73,12 @@ class TrafficModel(Model):
         self.traffic_percentile = traffic_percentile
         self.p_generate = p_generate  # Probability of new car each step
         self.max_persons = max_persons  # Maximum number of persons allowed
-
         self.dist_acceptable_over = du.make_truncnorm(15, -2, 4, mean=3)
         self.dist_ideal_distance_multiplier = du.make_truncnorm(2, 0.6, 0.3, mean=1)
         self.dist_curve_response = du.make_truncnorm(0.95, 0.6, 0.1, mean=None)
 
         # precompute accel curves once (101 buckets)
         self.accel_curve_cache = [build_empirical_accel_function(p / 100) for p in range(101)]
-
 
         # ===== canyon closure perams =====
         if not canyon_closures or len(canyon_closures) == 0:
@@ -124,7 +122,6 @@ class TrafficModel(Model):
             road_gdf=road_gdf
         )
 
-        # place the roadsegments on the space
         for agent, (x, y) in zip(self.road_segments, self.rs_pos):
             self.space.place_agent(agent, (x, y))
 
@@ -188,35 +185,8 @@ class TrafficModel(Model):
         return crashes, new_remainder
     
     def update_tolls(self):
-        """Compute current tolls based on mechanism + model state."""
-        mech = self.toll_mechanism
-
-        if mech == "static":
-           return # no change
-
-        elif mech == "volume":
-            self._update_tolls_volume()
+        tolling.update_tolls(self)
     
-    def _update_tolls_volume(self):
-        """
-        Simple volume-based toll calulator: linear increase above a threshold.
-        """
-
-        # these params come from SeasonConfig / DayParams via __init__
-        threshold = self.toll_params.get("volume_threshold", 100)
-        slope = self.toll_params.get("slope", 0.05)          
-        base_price = self.toll_params.get("base_price", 5.0)
-       
-        volume = len(self.vehicles_list)  # current number of vehicles on the road
-
-        if volume <= threshold:
-            car_toll = 0.0
-        else:
-            car_toll = base_price + slope * (volume - threshold)
-        
-        self.current_toll_car = car_toll
-
-
     def update_next_agents(self):
         # 1) Collect candidates once (avoid AgentSet scans inside per-agent code)
         vehicles = self.vehicles_list
