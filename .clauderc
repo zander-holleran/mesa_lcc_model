@@ -3,5 +3,5 @@
     "autoCommit": false,
     "branchPrefix": "feature/"
   },
-  "customInstructions": "When planning a new feature:\n1. First analyze if there's an existing implementation - describe what it does, how it works, and when it's triggered\n2. Create a detailed plan file in the plans/ directory\n3. Compare your proposed solution to the existing implementation, explaining differences and improvements\n4. Wait for my approval before implementing\n\nWhen implementing:\n1. Reference the relevant plan file from plan/\n2. Follow the approved approach"
+  "customInstructions": "Follow workflow in DEVELOPMENT.md.\n\nFor OPTIMIZATION tasks (performance, refactoring, efficiency):\n- Use optimization verification workflow\n- Run baseline before changes\n- Verify outputs after changes\n- Show performance comparison\n\nFor FUNCTIONAL tasks (features, bug fixes):\n- Use standard test workflow\n- Run relevant pytest tests"
 }

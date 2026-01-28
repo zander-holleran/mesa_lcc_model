@@ -1,6 +1,3 @@
-import random
-
-
 def too_close(model): 
     vehicles = model.agents.select(agent_type=model.agent_cls['vehicle'])
 
@@ -51,7 +48,7 @@ def pick_season_person_for_trip(model):
     if not model.season_person_pool:
         return None
 
-    pick = random.choices(model.season_person_pool, k=1)[0]
+    pick = model.rng.choice(model.season_person_pool)
     model.season_person_pool.remove(pick)
 
     return pick

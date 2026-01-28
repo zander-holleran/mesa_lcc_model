@@ -1,0 +1,2 @@
+# This file ensures the baselines directory exists in git.
+# Actual baseline files are gitignored (generated locally per machine).
