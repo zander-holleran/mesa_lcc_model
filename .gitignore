@@ -18,6 +18,5 @@ tests/baselines/*
 !tests/baselines/.gitkeep
 
 notes/
-plans/
 .DS_Store
 prof.stats
