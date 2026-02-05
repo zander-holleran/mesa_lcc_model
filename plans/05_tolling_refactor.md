@@ -124,19 +124,30 @@ class PITransform:
 
     Drives signal toward a target. Toll accumulates when signal stays
     above target and decreases when signal drops below.
+
+    When reset_integral_on_target=True (default), the integral resets to 0
+    whenever the signal is at or below the target. This prevents the toll
+    from persisting at elevated levels once congestion is controlled.
     """
     target: float = 30.0
     kp: float = 0.5
     ki: float = 0.05
     toll_min: float = 0.0
     toll_max: float = 50.0
+    reset_integral_on_target: bool = True  # reset integral when signal <= target
 
     def __post_init__(self):
         self._integral = 0.0
-        self._prev_error = None
 
     def __call__(self, signal: float) -> float:
         error = signal - self.target
+
+        # Reset integral when signal is at or below target
+        # This prevents toll from persisting once congestion is controlled
+        if self.reset_integral_on_target and error <= 0:
+            self._integral = 0.0
+            return self.toll_min
+
         self._integral += error
 
         # Anti-windup: clamp integral so it can't accumulate beyond
@@ -155,6 +166,7 @@ Key design choices:
 - Stateful transforms must be **reset between days** (see Integration section)
 - All transforms return a raw toll; rounding/capping are applied universally afterward
 - `toll_min`/`toll_max` on PITransform are transform-specific bounds that interact with anti-windup logic. These are distinct from the universal `cap`/`floor` on TollConfig (though in practice you'd use one or the other, not both)
+- PITransform's `reset_integral_on_target=True` (default) causes the integral to reset when signal ≤ target, so the toll drops immediately when congestion is controlled. Set to `False` for traditional PI behavior where the integral persists
 
 ### TollConfig
 
@@ -436,19 +448,63 @@ def test_pi_transform():
     tx = PITransform(target=30, kp=1.0, ki=0.0, toll_min=0, toll_max=50)
     assert tx(30) == 0.0           # at target
     assert tx(40) == 10.0          # above target
-    assert tx(20) == 0.0           # below target, clamped to 0
+    assert tx(20) == 0.0           # below target, returns toll_min
 
 def test_pi_integral_accumulation():
-    tx = PITransform(target=30, kp=0.0, ki=1.0, toll_min=0, toll_max=50)
+    tx = PITransform(target=30, kp=0.0, ki=1.0, toll_min=0, toll_max=50, reset_integral_on_target=False)
     tx(35)  # error = 5, integral = 5
     tx(35)  # error = 5, integral = 10
     assert tx(35) == 15.0  # ki * integral = 1.0 * 15
 
 def test_pi_anti_windup():
-    tx = PITransform(target=30, kp=0.0, ki=1.0, toll_min=0, toll_max=10)
+    tx = PITransform(target=30, kp=0.0, ki=1.0, toll_min=0, toll_max=10, reset_integral_on_target=False)
     for _ in range(100):
         result = tx(1000)  # huge error
     assert result == 10.0  # capped at toll_max
+
+def test_pi_integral_reset_on_target():
+    """Integral resets when signal drops to or below target (default behavior)."""
+    tx = PITransform(target=30, kp=0.5, ki=0.1, reset_integral_on_target=True)
+
+    # Build up integral while above target
+    tx(40)  # error=10, integral=10, toll > 0
+    tx(40)  # error=10, integral=20, toll > 0
+
+    # Signal drops to target - integral should reset
+    result = tx(30)
+    assert result == 0.0  # toll_min
+    assert tx._integral == 0.0  # integral reset
+
+def test_pi_integral_reset_below_target():
+    """Integral resets when signal drops below target."""
+    tx = PITransform(target=30, kp=0.5, ki=0.1, reset_integral_on_target=True)
+
+    tx(40)  # build up integral
+    result = tx(20)  # below target
+    assert result == 0.0
+    assert tx._integral == 0.0
+
+def test_pi_no_reset_when_disabled():
+    """Original PI behavior preserved when reset disabled."""
+    tx = PITransform(target=30, kp=0.0, ki=1.0, reset_integral_on_target=False)
+
+    tx(40)  # error=10, integral=10
+    tx(40)  # error=10, integral=20
+    result = tx(30)  # error=0, integral stays at 20
+
+    assert tx._integral == 20.0
+    assert result == 20.0  # ki * integral
+
+def test_pi_fresh_start_after_reset():
+    """After reset, toll builds from zero again."""
+    tx = PITransform(target=30, kp=0.0, ki=1.0, reset_integral_on_target=True)
+
+    tx(40)  # integral=10
+    tx(40)  # integral=20
+    tx(30)  # reset
+
+    result = tx(35)  # error=5, integral=5
+    assert result == 5.0  # started fresh
 ```
 
 ### Unit Tests: Signals
