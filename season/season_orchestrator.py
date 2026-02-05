@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import copy
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Protocol
 
@@ -88,6 +88,9 @@ class SeasonOrchestrator:
 
         day_index = day_cfg.day_index
 
+        # 0) reset toll state for new day (clears signal windows, PI integrals, etc.)
+        self.config.toll_config.reset()
+
         # 1) belief update
         self._update_beliefs(day_index)
 
@@ -128,9 +131,9 @@ class SeasonOrchestrator:
             max_persons=self.config.max_persons,
             start_hr=self.config.start_hr,
             bus_capacity=self.config.bus_capacity,
-            collect_every_n=self.config.collect_every_n,  
-            toll_mechanism=self.config.toll_mechanism,
-            toll_params=self.config.toll_params,
+            collect_every_n=self.config.collect_every_n,
+            toll_config=self.config.toll_config,
+            bus_user_fee=self.config.bus_user_fee,
 
             # person data from season orchestrator
             season_persons=self.season_persons,
@@ -342,6 +345,13 @@ class SeasonOrchestrator:
         avg_cost_car = df.loc[car_mask, "realized_cost"].mean() if car_mask.any() else float("nan")
         avg_toll_car = df.loc[car_mask, "toll_paid"].mean() if car_mask.any() else float("nan")
 
+        # Compute 5-number summary for toll distribution (single pass)
+        if car_mask.any():
+            toll_values = df.loc[car_mask, "toll_paid"].values
+            toll_min, toll_q1, toll_med, toll_q3, toll_max = np.percentile(toll_values, [0, 25, 50, 75, 100])
+        else:
+            toll_min = toll_q1 = toll_med = toll_q3 = toll_max = float("nan")
+
         summary = {
             "days_run": days_run,
             "total_trips": total_trips,
@@ -353,6 +363,11 @@ class SeasonOrchestrator:
             "avg_cost_car": avg_cost_car,
             "total_toll_revenue": total_toll,
             "avg_toll_car": avg_toll_car,
+            "toll_min": toll_min,
+            "toll_q1": toll_q1,
+            "toll_median": toll_med,
+            "toll_q3": toll_q3,
+            "toll_max": toll_max,
             "percent_bus_share": percent_bus,
         }
 
@@ -368,10 +383,43 @@ class SeasonOrchestrator:
             f"\n     Car, Agent VOT: ${avg_cost_car:.2f}, "
             "\n--- Tolling Metrics --- "
             f"\nAvg Toll Cars: ${avg_toll_car:.2f}"
+            f"{self._ascii_boxplot(toll_min, toll_q1, toll_med, toll_q3, toll_max)}"
             f"\nTotal Revenue: ${total_toll:.2f}"
         )
 
         return summary
+
+    def _ascii_boxplot(self, mn, q1, med, q3, mx, width=40):
+        """Render a horizontal ASCII box plot with 5-number summary."""
+        if np.isnan(mn):
+            return "\n     [No toll data]"
+
+        # Scale positions to width
+        span = mx - mn if mx > mn else 1
+        def pos(v):
+            return int((v - mn) / span * (width - 1))
+
+        p_q1, p_med, p_q3 = pos(q1), pos(med), pos(q3)
+
+        # Build the box plot line
+        line = [" "] * width
+        # Whiskers
+        line[0] = "├"
+        line[-1] = "┤"
+        for i in range(1, p_q1):
+            line[i] = "─"
+        for i in range(p_q3 + 1, width - 1):
+            line[i] = "─"
+        # Box
+        for i in range(p_q1, p_q3 + 1):
+            line[i] = "█"
+        # Median marker
+        line[p_med] = "│"
+
+        plot_str = "".join(line)
+        summary_str = f"Min: ${mn:.2f}  Q1: ${q1:.2f}  Med: ${med:.2f}  Q3: ${q3:.2f}  Max: ${mx:.2f}"
+
+        return f"\n     {plot_str}\n     {summary_str}"
 
     def _save_season_summary(self, season_summary: dict):
         # infer season_id from output_dir name (outputs/{season_id})
@@ -409,9 +457,20 @@ class SeasonOrchestrator:
         if self.output_dir is None:
             return
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        config_path = self.output_dir / "season_config.pkl"
-        with config_path.open("wb") as fh:
-            pickle.dump(self.config, fh, protocol=pickle.HIGHEST_PROTOCOL)
+        config_path = self.output_dir / "season_config.json"
+
+        def json_serializer(obj):
+            """Handle non-JSON-serializable objects."""
+            if hasattr(obj, '__dict__'):
+                return {
+                    '_type': type(obj).__name__,
+                    **{k: v for k, v in obj.__dict__.items() if not k.startswith('_')}
+                }
+            return str(obj)
+
+        config_dict = asdict(self.config)
+        with config_path.open("w") as fh:
+            json.dump(config_dict, fh, indent=2, default=json_serializer)
 
     def _save_df_if_exists(self, df, filename: str):
         if df is None:
@@ -625,7 +684,7 @@ class SeasonOrchestrator:
         traffic_percentile = getattr(day_cfg, "traffic_percentile", None)
         bus_interval  = getattr(day_cfg, "bus_interval", None)
 
-        car_toll = self.config.toll_params['car']
+        car_toll = self.config.toll_config.get_initial_toll()
         bus_prior = getattr(self.config.population_params, "prior_bus", None)
         car_prior = getattr(self.config.population_params, "prior_car", None)
 

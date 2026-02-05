@@ -15,4 +15,14 @@ class BusAgent(VehicleAgent):
         self.accel_curve = build_empirical_accel_function(self.performance)
         self.curve_responce = .9 
 
-        self.toll_paid = model.current_toll_bus  # total toll paid by this vehicle  
+        self.toll_paid = 0.0  # buses don't pay road tolls; passengers pay user fee
+
+    def vehicle_to_tp_info_pass(self):
+        """Override to charge passengers the bus_user_fee instead of vehicle toll."""
+        for tp in getattr(self, "passengers", []):
+            tp.toll_paid = self.model.bus_user_fee  # passengers pay user fee
+            tp.board_step = self.created_at_step
+            tp.arrive_step = self.model.steps
+            tp.cumtime_lost_sec = self.cumtime_lost_sec
+
+            tp.tp_to_sp_info_pass()

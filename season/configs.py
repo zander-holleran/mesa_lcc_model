@@ -3,6 +3,7 @@ from typing import Optional, Literal, Dict, Any, List, Callable
 import numpy as np
 from season.persons import SeasonPerson
 from scipy.stats import lognorm, skewnorm, norm
+from traffic.model.tolling import TollConfig
 
 # ===================== The following are imputs to SeasonConfig ====================== #
 @dataclass
@@ -90,18 +91,23 @@ class DayParams:
         )
 
 
-ScheduleMode = Literal["static", "dist"] # makes it such that ScheduleSpecs only accepts these two strings as mode
+ScheduleMode = Literal["static", "dist", "list"] # makes it such that ScheduleSpecs only accepts these strings as mode
 
 @dataclass
 class ScheduleSpecs:
     mode: ScheduleMode
-    value:Optional[int] = None       # used when mode == "static"
+    value: Optional[Any] = None       # used when mode == "static" (scalar) or "list" (list of values)
     dist: Optional[Any] = None        # used when mode == "dist" (e.g. scipy.stats.norm)
-    round_to_int: bool = True              # whether to round the draws to integers
+    round_to_int: bool = True         # whether to round the draws to integers
 
     def realize(self, rng: np.random.Generator = np.random.default_rng(123), n_days: int=1):
         if self.mode == "static":
             return [self.value] * n_days
+
+        if self.mode == "list":
+            if len(self.value) != n_days:
+                raise ValueError(f"ScheduleSpecs list has {len(self.value)} values but n_days={n_days}")
+            return list(self.value)
 
         # happy path: mode == "dist", dist is a scipy frozen dist with .rvs
         draws = self.dist.rvs(size=n_days, random_state=rng)
@@ -134,9 +140,9 @@ class SeasonConfig:
     road_path: Optional[str] = None
     ecs_path: Optional[str] = None
 
-    # toll mechanism for the whole season (can encode pigouvian vs static here)
-    toll_mechanism: Optional[str] = None
-    toll_params: Dict[str, Any] = field(default_factory=dict)
+    # toll configuration for the whole season
+    toll_config: TollConfig = field(default_factory=lambda: TollConfig.static(car=0.0))
+    bus_user_fee: float = 0.0
 
     # the actual per-day parameters
     day_params: List[DayParams] = field(default_factory=list)
@@ -172,9 +178,9 @@ def make_season_config(
     crashes_schedule: ScheduleSpecs = ScheduleSpecs("static", 0),
     canyon_closures_schedule: Optional[Any] = None,
 
-    # toll mechanism
-    toll_mechanism: Optional[str] = None,
-    toll_params: Optional[Dict[str, Any]] = {"car": 0.0, "bus": 0.0},
+    # toll configuration
+    toll: TollConfig = None,
+    bus_user_fee: float = 0.0,
 
     population_params: PopulationParams = None,
 
@@ -203,7 +209,7 @@ def make_season_config(
         )
 
     return SeasonConfig(
-        # season-level settings 
+        # season-level settings
         season_id=season_id,
         run_description=run_description,
         seed=seed,
@@ -217,8 +223,8 @@ def make_season_config(
         bus_capacity=bus_capacity,
         road_path=road_path,
         ecs_path=ecs_path,
-        toll_mechanism=toll_mechanism,
-        toll_params=toll_params or {},
+        toll_config=toll if toll is not None else TollConfig.static(car=0.0),
+        bus_user_fee=bus_user_fee,
         # per-day parameters sent to TrafficModel
         day_params=day_params,
         population_params=population_params
