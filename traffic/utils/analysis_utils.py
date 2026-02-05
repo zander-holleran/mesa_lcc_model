@@ -2,7 +2,6 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-import plotly.express as px
 
 from traffic.utils.unit_conversion_utils import get_mps, meters_to_feet  
 
@@ -198,6 +197,7 @@ def model_data_time_series(model):
     
 ##  -~-~-~-~-~-~-~-~-~-~-~-~ Stage 2: takes a stage one df as input -~-~-~-~-~-~-~-~-~-~-~-~
 def plot_single_car_driving_actions(vehicles_full, issue_car_id):
+    import plotly.express as px
     issue_car_df = vehicles_full[vehicles_full.AgentID == issue_car_id]
     fig = px.scatter(
         issue_car_df, 
@@ -259,18 +259,18 @@ def plot_mean_feature(vehicles_full, feature):
 
 def plot_section_trends(model_ts, col, window):
     """
-    Creates an interactive Plotly line plot of a time-varying dictionary column from model output, 
+    Creates an interactive Plotly line plot of a time-varying dictionary column from model output,
     showing trends for each road section over time.
 
     Parameters:
     ----------
     model_ts : pandas.DataFrame
         The model output DataFrame containing a column of dictionaries (e.g., volume_by_section).
-    
+
     col : str
         The name of the column containing dictionary values, where keys represent road sections
         and values are the variable of interest (e.g., volume(_by_section), average speed(_by_section)).
-    
+
     window : int
         The window size for rolling mean smoothing applied to each section's time series.
 
@@ -278,6 +278,7 @@ def plot_section_trends(model_ts, col, window):
     -------
     None. Displays an interactive Plotly line chart with zoom, pan, and legend filtering.
     """
+    import plotly.express as px
     prefix = col.removesuffix("_by_section")
     # dict col to wide
     col_data = model_ts[col].apply(pd.Series) 

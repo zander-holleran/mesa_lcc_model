@@ -74,7 +74,7 @@ class TrafficPersonAgent(Agent):
             travel_time_uncertainty=self.tt_unc_bus,
             value_of_time=self.value_of_time,
             experience_weight=self.experience_weight_bus,
-            toll=self.model.current_toll_bus,
+            toll=self.model.bus_user_fee,
         )
         
         return "car" if car_cost <= bus_cost else "bus"
