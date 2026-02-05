@@ -10,7 +10,8 @@ from tqdm import tqdm
 # Import my agents
 from traffic.agents import VehicleAgent, BlockerAgent, BusAgent, CarAgent, RoadSegmentAgent, TrafficPersonAgent
 from traffic.agents.vehicle_agent import build_empirical_accel_function
-from traffic.model import tolling 
+from traffic.model import tolling
+from traffic.model.tolling import TollConfig
 # import my utils
 from traffic.utils import unit_conversion_utils as uc  # for get_mph, etc.
 import traffic.utils.distribution_utils as du
@@ -26,12 +27,13 @@ from collections import defaultdict
 class TrafficModel(Model):
     """Mesa model simulating traffic on the canyon road with a car cap."""
 
-    def __init__(self, road_gdf, ecs_df, max_steps=50000, seed=123, batchrun=False, collect_every_n=1, 
+    def __init__(self, road_gdf, ecs_df, max_steps=50000, seed=123, batchrun=False, collect_every_n=1,
                  start_hr=5, traffic_percentile=None, p_generate=None, max_persons=50,
                  canyon_closures={},
-                 bus_interval=30, car_preference=1, bus_capacity=30, 
+                 bus_interval=30, car_preference=1, bus_capacity=30,
                  crashes_per_100k_vmt_input=4,
-                 toll_mechanism="static", toll_params=None,
+                 toll_config: TollConfig = None,
+                 bus_user_fee: float = 0.0,
                  season_persons=None,
                  current_day = 0
                  ):
@@ -63,10 +65,9 @@ class TrafficModel(Model):
         self.start_point = tuple(road_gdf.iloc[0].geometry.coords[0])          # may be moved by "too_close" logic
 
         # ===== Tolling perams =====
-        self.toll_mechanism = toll_mechanism
-        self.toll_params = toll_params or {}
-        self.current_toll_car = self.toll_params.get("car", 0.0)
-        self.current_toll_bus = self.toll_params.get("bus", 0.0)
+        self.toll_config = toll_config if toll_config is not None else TollConfig.static(car=0.0)
+        self.current_toll_car = self.toll_config.get_initial_toll()
+        self.bus_user_fee = bus_user_fee
 
         # ===== car centric perams =====
         self.start_step = uc.sec_after_five(start_hr)
