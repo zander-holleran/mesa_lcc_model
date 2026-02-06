@@ -153,18 +153,19 @@ def finished_agents_summary_df(model, plots=True):
 def vehicle_agent_data_time_series(model, plots=True):
     if model.batchrun == True:
         return None
-        
-    agent_data = model.datacollector.get_agent_vars_dataframe().reset_index()
-    vehicles_full = agent_data.loc[agent_data.AgentType.isin(['CarAgent', 'BusAgent'])].copy()
-    vehicles_full['implicit_sl_delta'] = vehicles_full.speed - vehicles_full.implicit_speed_limit
-    vehicles_full['posted_sl_delta'] = vehicles_full.speed - vehicles_full.posted_speed_limit
+
+    # Use Tier 2 data from hybrid collector
+    vehicles_full = model.datacollector.get_tier2_dataframe()
+    if vehicles_full.empty:
+        return None
+
+    # Filter to vehicle types
+    vehicles_full = vehicles_full.loc[vehicles_full.AgentType.isin(['CarAgent', 'BusAgent'])].copy()
 
     # produce some lists of ids i might want to look at
     bus_ids = list(vehicles_full.loc[vehicles_full.AgentType == 'BusAgent'].AgentID.unique())
-    slowest_ids = list(vehicles_full.groupby(by='AgentID', as_index=False).max('steps_taken').sort_values('steps_taken', ascending=False).AgentID[:5])
-    
-    print(f'''Bus IDs: {bus_ids}
-    Slow IDs: {slowest_ids}''')
+
+    print(f'''Bus IDs: {bus_ids}''')
 
     # display the driving actions graphs
     if plots:
@@ -173,8 +174,9 @@ def vehicle_agent_data_time_series(model, plots=True):
     return vehicles_full
 
 
-def model_data_time_series(model):   
-    model_df = model.datacollector.get_model_vars_dataframe()
+def model_data_time_series(model):
+    # Use Tier 1 data from hybrid collector
+    model_df = model.datacollector.get_tier1_dataframe()
 
     # create the density col
     

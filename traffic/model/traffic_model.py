@@ -1,6 +1,5 @@
 # genreal imports
 from mesa import Model
-from mesa.datacollection import DataCollector
 from mesa.space import ContinuousSpace
 import geopandas as gpd
 import numpy as np
@@ -18,9 +17,9 @@ import traffic.utils.distribution_utils as du
 
 
 # import other parts of model
-import traffic.model.reporting as rep
-import traffic.model.generate as gen 
-import traffic.model.init_helpers as ih 
+import traffic.model.generate as gen
+import traffic.model.init_helpers as ih
+from traffic.model.hybrid_collector import HybridDataCollector, HybridCollectorConfig
 from collections import defaultdict
 
 
@@ -126,11 +125,13 @@ class TrafficModel(Model):
         for agent, (x, y) in zip(self.road_segments, self.rs_pos):
             self.space.place_agent(agent, (x, y))
 
-        # set up the reporters
-        if self.batchrun: 
-            self.datacollector = DataCollector(model_reporters = rep.model_reporters)
-        else:
-            self.datacollector = DataCollector(model_reporters = rep.model_reporters, agent_reporters = rep.agent_reporters)
+        # set up the hybrid data collector
+        hybrid_config = HybridCollectorConfig(
+            max_steps=max_steps,
+            tier2_sample_interval=collect_every_n,
+            tier2_enabled=not self.batchrun,  # Disable spatial data in batch mode
+        )
+        self.datacollector = HybridDataCollector(hybrid_config)
 
         # agent lists
         self.vehicles_list = []
@@ -282,9 +283,8 @@ class TrafficModel(Model):
         
         self.do_tick(self.blockers_list)
 
-        # Collect data
-        if (self.steps % self.collect_every_n) == 0:
-            self.datacollector.collect(self)
+        # Collect data (interval checking is internal for Tier 2)
+        self.datacollector.collect(self)
 
         # end of step house keeping            
         self.max_steps_check()

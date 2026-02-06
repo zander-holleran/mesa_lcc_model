@@ -121,7 +121,11 @@ def generate_person(model):
         
 
 def generate_blocker(model, blocker_type, self_distruct_timer, seg_i):
-        print(f"{blocker_type} at step {model.steps}")
+        # Structured event logging
+        if blocker_type == "crash":
+            model.datacollector.log_crash(model, seg_i, self_distruct_timer)
+        elif blocker_type == "canyon_closure":
+            model.datacollector.log_canyon_closure(model, seg_i, self_distruct_timer)
         new_blocker = model.agent_cls['blocker'].create_agents(model=model, n=1, blocker_type=blocker_type, self_distruct_timer=self_distruct_timer, seg_i=seg_i)
         model.agents.add(*new_blocker)
         model.blockers_list.append(new_blocker[0])
