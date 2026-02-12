@@ -34,7 +34,8 @@ class TrafficModel(Model):
                  toll_config: TollConfig = None,
                  bus_user_fee: float = 0.0,
                  season_persons=None,
-                 current_day = 0
+                 current_day = 0,
+                 hybrid_collector_config: HybridCollectorConfig = None
                  ):
         super().__init__(seed=seed)
 
@@ -125,13 +126,13 @@ class TrafficModel(Model):
         for agent, (x, y) in zip(self.road_segments, self.rs_pos):
             self.space.place_agent(agent, (x, y))
 
-        # set up the hybrid data collector
-        hybrid_config = HybridCollectorConfig(
+        # set up the hybrid data collector using the provided config or fall back to defaults
+        collector_config = hybrid_collector_config or HybridCollectorConfig(
             max_steps=max_steps,
             tier2_sample_interval=collect_every_n,
             tier2_enabled=not self.batchrun,  # Disable spatial data in batch mode
         )
-        self.datacollector = HybridDataCollector(hybrid_config)
+        self.datacollector = HybridDataCollector(collector_config)
 
         # agent lists
         self.vehicles_list = []
@@ -296,6 +297,5 @@ class TrafficModel(Model):
                 break
             self.step()
    
-
 
 

@@ -3,6 +3,7 @@ from typing import Optional, Literal, Dict, Any, List, Callable
 import numpy as np
 from season.persons import SeasonPerson
 from scipy.stats import lognorm, skewnorm, norm
+from traffic.model.hybrid_collector import HybridCollectorConfig
 from traffic.model.tolling import TollConfig
 
 # ===================== The following are imputs to SeasonConfig ====================== #
@@ -149,6 +150,9 @@ class SeasonConfig:
     
     # population parameters
     population_params: PopulationParams = field(default_factory=PopulationParams)
+    
+    # optional hybrid collector config for TrafficModel
+    hybrid_collector_config: Optional[HybridCollectorConfig] = None
 
 
 # ====================== Factory function to create SeasonConfig objects ====================== #
@@ -183,6 +187,8 @@ def make_season_config(
     bus_user_fee: float = 0.0,
 
     population_params: PopulationParams = None,
+
+    hybrid_collector_config: HybridCollectorConfig = None,
 
 ) -> SeasonConfig:
     rng = np.random.default_rng(seed)
@@ -227,6 +233,6 @@ def make_season_config(
         bus_user_fee=bus_user_fee,
         # per-day parameters sent to TrafficModel
         day_params=day_params,
-        population_params=population_params
+        population_params=population_params,
+        hybrid_collector_config=hybrid_collector_config
     )
-

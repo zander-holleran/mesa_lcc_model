@@ -26,6 +26,10 @@ class HybridCollectorConfig:
     """Configuration for HybridDataCollector."""
     max_steps: int = 50000
 
+    # Tier 1 enable + cadence
+    tier1_enabled: bool = True
+    tier1_interval: int = 1  # collect every Nth step
+
     # Tier 1: Scalar metrics to collect (keys from TIER1_SCALARS)
     tier1_scalars: List[str] = field(default_factory=lambda: [
         'step', 'current_toll', 'vehicle_count', 'active_cars', 'active_buses',
@@ -146,12 +150,12 @@ TIER1_SCALARS: Dict[str, Dict[str, Any]] = {
 # Histogram metric registry
 TIER1_HISTOGRAMS: Dict[str, Dict[str, Any]] = {
     'implicit_sl_delta': {
-        'bins': np.array([-np.inf, -30, -20, -10, -5, 0, 5, np.inf]),
+        'bins': np.array([-np.inf, -30, -20, -10, 0, np.inf]),
         'dtype': np.int16,
         'fn': lambda v: uc.get_mph(v.speed) - v.implicit_speed_limit,
     },
     'speed_mps': {
-        'bins': np.array([0, 5, 10, 15, 20, 25, 30, np.inf]),
+        'bins': np.array([0, 10, 20, 30, 40, np.inf]),
         'dtype': np.int16,
         'fn': lambda v: v.speed,
     },
@@ -185,6 +189,9 @@ class Tier1Collector:
 
     def collect(self, model) -> None:
         """Collect all configured metrics for current step."""
+        interval = max(1, self.config.tier1_interval)
+        if interval > 1 and (model.steps % interval != 0):
+            return
         if self._write_idx >= self.config.max_steps:
             return
 
@@ -485,14 +492,15 @@ class HybridDataCollector:
         self.config = config
 
         # Initialize tier collectors
-        self.tier1 = Tier1Collector(config)
+        self.tier1 = Tier1Collector(config) if config.tier1_enabled else None
         self.tier2 = Tier2Collector(config) if config.tier2_enabled else None
         self.tier3 = Tier3Collector(config) if config.tier3_enabled else None
         self.tier4 = Tier4Collector(config) if config.tier4_enabled else None
 
     def collect(self, model) -> None:
         """Main collection method - call every step."""
-        self.tier1.collect(model)
+        if self.tier1:
+            self.tier1.collect(model)
         if self.tier2:
             self.tier2.collect(model)
         if self.tier4:
@@ -514,7 +522,9 @@ class HybridDataCollector:
 
     def get_tier1_dataframe(self) -> pd.DataFrame:
         """Get aggregate metrics as DataFrame."""
-        return self.tier1.to_dataframe()
+        if self.tier1:
+            return self.tier1.to_dataframe()
+        return pd.DataFrame()
 
     def get_tier2_dataframe(self) -> pd.DataFrame:
         """Get sampled spatial data (animation-compatible format)."""

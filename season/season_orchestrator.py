@@ -148,6 +148,7 @@ class SeasonOrchestrator:
             # irrelevant for season runs
             p_generate=None,
             car_preference=1,
+            hybrid_collector_config=self.config.hybrid_collector_config,
         )
 #-----------------------------------------------------------------------------  
 # ------------------------- Compute logs + summaries -------------------------
