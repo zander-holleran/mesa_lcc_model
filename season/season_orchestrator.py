@@ -148,15 +148,27 @@ class SeasonOrchestrator:
             # irrelevant for season runs
             p_generate=None,
             car_preference=1,
+            hybrid_collector_config=self.config.hybrid_collector_config,
         )
 #-----------------------------------------------------------------------------  
 # ------------------------- Compute logs + summaries -------------------------
 #-----------------------------------------------------------------------------
     def _save_datacollector_outputs(self, day_index, tm):
         prefix = f"day_{day_index}"
-        model_ts = tm.datacollector.get_model_vars_dataframe()
-        model_ts_path = self.output_dir / f"{prefix}_model_ts.parquet"
-        model_ts.to_parquet(model_ts_path)
+
+        # Tier 1: Aggregate metrics (model time series)
+        tier1_df = tm.datacollector.get_tier1_dataframe()
+        tier1_df.to_parquet(self.output_dir / f"{prefix}_model_ts.parquet")
+
+        # Tier 2: Spatial data for animations
+        tier2_df = tm.datacollector.get_tier2_dataframe()
+        if not tier2_df.empty:
+            tier2_df.to_parquet(self.output_dir / f"{prefix}_spatial.parquet")
+
+        # Tier 3: Events (crashes, closures)
+        events_df = tm.datacollector.get_events_dataframe()
+        if not events_df.empty:
+            events_df.to_parquet(self.output_dir / f"{prefix}_events.parquet")
 
 
 

@@ -6,316 +6,32 @@ Supports baseline save/verify workflow for tracking performance changes.
 
 Configuration:
 - 3000 persons
-- 3 days
+- 2 days
 - traffic_percentile=50 (free-flow)
 - bus_interval=30 mins
 - crashes_per_100k_vmt=5
 
 Usage:
-    python tests/performance_free_flow.py                    # Run benchmark
-    python tests/performance_free_flow.py --save-baseline    # Save as baseline
-    python tests/performance_free_flow.py --verify           # Compare to baseline
-    python tests/performance_free_flow.py --clean            # Remove baseline
-    python tests/performance_free_flow.py --runs 5           # More runs for stable average
+    python tests/performance_free_flow.py                              # Run benchmark
+    python tests/performance_free_flow.py --save-baseline              # Save as 'pre' baseline
+    python tests/performance_free_flow.py --verify --collector matched # Compare to pre baseline
+    python tests/performance_free_flow.py --clean                      # Remove baseline for label
+    python tests/performance_free_flow.py --runs 3                     # More runs for stable avg
+    python tests/performance_free_flow.py --collector {small,medium,large,matched,lean}
 """
 
-import time
-import pandas as pd
 import sys
 from pathlib import Path
 
-# Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from season.season_orchestrator import SeasonOrchestrator
-from season.configs import make_season_config, PopulationParams, ScheduleSpecs
+from perf_utils import (
+    get_collector_config, get_free_flow_config,
+    run_performance_test, save_baseline, verify_against_baseline, clean_baseline,
+    DEFAULT_SEED, COLLECTOR_PRESETS,
+)
 
-# Baseline file paths
-BASELINE_DIR = Path(__file__).parent / "baselines"
-BASELINE_METRICS = BASELINE_DIR / "performance_free_flow_metrics.csv"
-BASELINE_TRIP_LOG = BASELINE_DIR / "performance_free_flow_trip_log.parquet"
-
-SEED = 99999
-
-
-def get_config():
-    """Return the standard config for free-flow performance test."""
-    return make_season_config(
-        season_id="perf_free_flow",
-        run_description="Performance test - free flow",
-        seed=SEED,
-        n_days=3,
-        max_persons=3000,
-        max_steps=50000,
-        collect_every_n=100,
-        batch_run=True,
-        road_path="data/roads/hw210_sl_and_curvs.parquet",
-        ecs_path="data/vehicle_counts/expected_counts_seconds.csv",
-        traffic_percentile_schedule=ScheduleSpecs("static", 50),
-        bus_interval_schedule=ScheduleSpecs("static", 30),
-        crashes_schedule=ScheduleSpecs("static", 5),
-        population_params=PopulationParams(population_size=3000),
-    )
-
-
-def run_single_benchmark():
-    """Run a single benchmark and return metrics."""
-    config = get_config()
-
-    start = time.perf_counter()
-    orch = SeasonOrchestrator(config, store_data=False)
-    orch.run_season()
-    elapsed = time.perf_counter() - start
-
-    trip_log = orch.get_trip_log_df()
-    total_trips = len(trip_log) if trip_log is not None else 0
-
-    # Get total steps from last model (for single season, this is cumulative)
-    # For multi-day runs, we track total trips as the throughput metric
-    total_steps = orch.last_model_run.steps if orch.last_model_run else 0
-
-    return {
-        "elapsed_sec": elapsed,
-        "total_trips": total_trips,
-        "total_steps": total_steps,
-        "steps_per_sec": total_steps / elapsed if elapsed > 0 else 0,
-        "trips_per_sec": total_trips / elapsed if elapsed > 0 else 0,
-    }, trip_log
-
-
-def run_performance_test(num_runs: int = 3, verbose: bool = True) -> dict:
-    """
-    Run performance benchmark under free-flow conditions.
-
-    Args:
-        num_runs: Number of runs to average
-        verbose: Print progress and results
-
-    Returns:
-        Dictionary with performance metrics
-    """
-    if verbose:
-        print("=" * 60)
-        print("PERFORMANCE TEST: FREE FLOW (50th percentile)")
-        print("=" * 60)
-        print(f"Config: 3000 persons, 3 days, traffic_percentile=50, seed={SEED}")
-        print(f"Number of runs: {num_runs}")
-        print()
-
-    times = []
-    all_steps = []
-    all_trips = []
-    trip_log = None
-
-    for i in range(num_runs):
-        if verbose:
-            print(f"Run {i + 1}/{num_runs}...")
-
-        metrics, trip_log = run_single_benchmark()
-        times.append(metrics["elapsed_sec"])
-        all_steps.append(metrics["total_steps"])
-        all_trips.append(metrics["total_trips"])
-
-        if verbose:
-            print(f"  Completed in {metrics['elapsed_sec']:.2f}s, "
-                  f"{metrics['total_steps']} steps, "
-                  f"{metrics['steps_per_sec']:.0f} steps/s")
-
-    avg_time = sum(times) / len(times)
-    min_time = min(times)
-    max_time = max(times)
-    total_steps = all_steps[-1]  # Same for all runs (deterministic)
-    total_trips = all_trips[-1]
-
-    results = {
-        "scenario": "free_flow",
-        "traffic_percentile": 50,
-        "persons": 3000,
-        "days": 3,
-        "num_runs": num_runs,
-        "avg_time_sec": avg_time,
-        "min_time_sec": min_time,
-        "max_time_sec": max_time,
-        "total_steps": total_steps,
-        "total_trips": total_trips,
-        "avg_steps_per_sec": total_steps / avg_time if avg_time > 0 else 0,
-        "trips_per_sec": total_trips / avg_time if avg_time > 0 else 0,
-    }
-
-    if verbose:
-        print()
-        print("=" * 60)
-        print("RESULTS: FREE FLOW")
-        print("=" * 60)
-        print(f"Total steps:    {total_steps}")
-        print(f"Total trips:    {total_trips}")
-        print()
-        print(f"Average time:   {avg_time:.2f}s")
-        print(f"Min time:       {min_time:.2f}s")
-        print(f"Max time:       {max_time:.2f}s")
-        print()
-        print(f"Avg steps/sec:  {results['avg_steps_per_sec']:.0f}")
-        print(f"Trips/second:   {results['trips_per_sec']:.0f}")
-        print("=" * 60)
-
-    return results, trip_log
-
-
-def save_baseline(num_runs: int = 3, verbose: bool = True) -> bool:
-    """Save baseline performance metrics for later comparison."""
-    if verbose:
-        print("=" * 60)
-        print("SAVING PERFORMANCE BASELINE: FREE FLOW")
-        print("=" * 60)
-        print()
-
-    BASELINE_DIR.mkdir(exist_ok=True)
-
-    results, trip_log = run_performance_test(num_runs=num_runs, verbose=verbose)
-
-    # Save metrics and trip log
-    pd.DataFrame([results]).to_csv(BASELINE_METRICS, index=False)
-    trip_log.to_parquet(BASELINE_TRIP_LOG)
-
-    if verbose:
-        print()
-        print(f"Baseline saved to {BASELINE_DIR}/")
-        print(f"  - {BASELINE_METRICS.name}")
-        print(f"  - {BASELINE_TRIP_LOG.name}")
-        print()
-        print("=" * 60)
-        print("BASELINE SAVED SUCCESSFULLY")
-        print("=" * 60)
-
-    return True
-
-
-def verify_against_baseline(num_runs: int = 3, verbose: bool = True) -> bool:
-    """Verify current performance against saved baseline."""
-    if verbose:
-        print("=" * 60)
-        print("VERIFYING AGAINST PERFORMANCE BASELINE: FREE FLOW")
-        print("=" * 60)
-        print()
-
-    if not BASELINE_METRICS.exists():
-        print("ERROR: No baseline found. Run with --save-baseline first.")
-        return False
-
-    # Load baseline
-    baseline = pd.read_csv(BASELINE_METRICS).iloc[0].to_dict()
-    baseline_trip_log = pd.read_parquet(BASELINE_TRIP_LOG)
-
-    if verbose:
-        print(f"Baseline: {baseline['avg_time_sec']:.2f}s avg, "
-              f"{baseline['avg_steps_per_sec']:.0f} steps/s")
-        print()
-
-    results, trip_log = run_performance_test(num_runs=num_runs, verbose=verbose)
-
-    # Compare outputs (determinism check)
-    all_passed = True
-
-    if verbose:
-        print()
-        print("-" * 40)
-        print("OUTPUT VERIFICATION")
-        print("-" * 40)
-
-    # Check trip counts match
-    if results["total_trips"] != baseline["total_trips"]:
-        if verbose:
-            print(f"FAIL: Trip count differs (baseline: {baseline['total_trips']}, "
-                  f"current: {results['total_trips']})")
-        all_passed = False
-
-    if results["total_steps"] != baseline["total_steps"]:
-        if verbose:
-            print(f"FAIL: Step count differs (baseline: {baseline['total_steps']}, "
-                  f"current: {results['total_steps']})")
-        all_passed = False
-
-    # Check trip log matches
-    try:
-        pd.testing.assert_frame_equal(
-            trip_log.reset_index(drop=True),
-            baseline_trip_log.reset_index(drop=True),
-            check_exact=False,
-            rtol=1e-10,
-        )
-        if verbose and all_passed:
-            print("PASS: Outputs identical to baseline")
-    except AssertionError as e:
-        if verbose:
-            print(f"FAIL: Trip log differs")
-            print(f"  {str(e)[:200]}")
-        all_passed = False
-
-    # Performance comparison
-    if verbose:
-        print()
-        print("-" * 40)
-        print("PERFORMANCE COMPARISON")
-        print("-" * 40)
-        baseline_time = baseline['avg_time_sec']
-        current_time = results['avg_time_sec']
-        speedup = (baseline_time - current_time) / baseline_time * 100
-
-        baseline_sps = baseline['avg_steps_per_sec']
-        current_sps = results['avg_steps_per_sec']
-        sps_change = (current_sps - baseline_sps) / baseline_sps * 100
-
-        print(f"Baseline time:      {baseline_time:.2f}s")
-        print(f"Current time:       {current_time:.2f}s")
-        if speedup > 0:
-            print(f"Time change:        {speedup:.1f}% faster")
-        elif speedup < 0:
-            print(f"Time change:        {-speedup:.1f}% slower")
-        else:
-            print(f"Time change:        No change")
-
-        print()
-        print(f"Baseline steps/s:   {baseline_sps:.0f}")
-        print(f"Current steps/s:    {current_sps:.0f}")
-        if sps_change > 0:
-            print(f"Throughput change:  {sps_change:.1f}% faster")
-        elif sps_change < 0:
-            print(f"Throughput change:  {-sps_change:.1f}% slower")
-        else:
-            print(f"Throughput change:  No change")
-
-    if verbose:
-        print()
-        print("=" * 60)
-        if all_passed:
-            print("PERFORMANCE CHECK: PASSED")
-            print("Outputs are identical to baseline.")
-        else:
-            print("PERFORMANCE CHECK: FAILED")
-            print("Outputs differ from baseline!")
-        print("=" * 60)
-
-    return all_passed
-
-
-def clean_baseline(verbose: bool = True) -> bool:
-    """Remove baseline files."""
-    if verbose:
-        print("Removing baseline files...")
-
-    removed = False
-    for f in [BASELINE_METRICS, BASELINE_TRIP_LOG]:
-        if f.exists():
-            f.unlink()
-            if verbose:
-                print(f"  Removed {f.name}")
-            removed = True
-
-    if not removed and verbose:
-        print("  No baseline files found")
-
-    return True
-
+SCENARIO = "free_flow"
 
 if __name__ == "__main__":
     import argparse
@@ -324,37 +40,46 @@ if __name__ == "__main__":
         description="Free-flow performance test",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Workflow for tracking performance changes:
-  1. python tests/performance_free_flow.py --save-baseline
-  2. Make code changes
-  3. python tests/performance_free_flow.py --verify
+Workflow:
+  1. Save pre baseline:  python tests/performance_free_flow.py --save-baseline
+  2. Verify any config:  python tests/performance_free_flow.py --verify --collector matched
+  3. Clean up:           python tests/performance_free_flow.py --clean
+
+For multi-config comparison in one shot, use compare_collectors.py instead.
         """
     )
-    parser.add_argument("--seed", type=int, default=SEED, help="Random seed")
-    parser.add_argument("--runs", type=int, default=3, help="Number of runs")
+    parser.add_argument("--seed", type=int, default=DEFAULT_SEED, help="Random seed")
+    parser.add_argument("--runs", type=int, default=3, help="Number of runs to average")
     parser.add_argument("--save-baseline", action="store_true",
-                        help="Save current performance as baseline")
+                        help="Save current run as 'pre' baseline")
     parser.add_argument("--verify", action="store_true",
-                        help="Verify against baseline")
+                        help="Run and verify outputs match 'pre' baseline")
     parser.add_argument("--clean", action="store_true",
-                        help="Remove baseline files")
+                        help="Remove baseline files for current collector label")
     parser.add_argument("--quiet", action="store_true", help="Suppress output")
+    parser.add_argument("--collector", choices=COLLECTOR_PRESETS[1:], default=None,
+                        help="Collector preset (omit for 'pre'/default)")
     args = parser.parse_args()
 
-    if args.seed != SEED:
-        SEED = args.seed
+    seed = args.seed
+    make_config = lambda: get_free_flow_config(seed=seed)
+    collector_label = args.collector or "pre"
+    collector_config = get_collector_config(args.collector) if args.collector else None
 
     if args.clean:
-        clean_baseline(verbose=not args.quiet)
+        clean_baseline(SCENARIO, collector_label, verbose=not args.quiet)
         sys.exit(0)
 
     if args.save_baseline:
-        save_baseline(num_runs=args.runs, verbose=not args.quiet)
+        save_baseline(make_config, SCENARIO, args.runs, not args.quiet,
+                      collector_label, collector_config)
         sys.exit(0)
 
     if args.verify:
-        passed = verify_against_baseline(num_runs=args.runs, verbose=not args.quiet)
+        passed = verify_against_baseline(make_config, SCENARIO, args.runs, not args.quiet,
+                                         collector_label, collector_config)
         sys.exit(0 if passed else 1)
 
     # Default: just run the benchmark
-    run_performance_test(num_runs=args.runs, verbose=not args.quiet)
+    run_performance_test(make_config, SCENARIO, args.runs, not args.quiet,
+                         collector_config, collector_label)

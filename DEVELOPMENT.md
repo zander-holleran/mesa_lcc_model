@@ -15,8 +15,6 @@ Before implementing any feature:
    - Comparison: new vs existing approach
    - Trade-offs and rationale
 
-3. **Wait for approval** before coding
-
 ## Git Workflow
 
 Before making any code changes:
