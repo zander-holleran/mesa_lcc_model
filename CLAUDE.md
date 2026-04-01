@@ -118,3 +118,13 @@ notes/                  # Schema diagrams and crash notes
 - `perf/description` — performance optimizations
 
 Always branch from `main` and open a PR; do not commit directly to `main`.
+
+## File Reading Rules
+
+Before reading any file, always check its size first using `wc -l` (line count).
+- If the file is under 300 lines, read it normally in one shot.
+- If the file is over 300 lines, read it in blocks of 250 lines at a time
+  using line range offsets (e.g., lines 1-250, then 251-500, etc.).
+- Never skip or summarize sections — read every block sequentially until
+  you've seen the entire file.
+- After reading all blocks, confirm you've reached the end of the file.
