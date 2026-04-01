@@ -166,15 +166,15 @@ def make_season_config(
     batch_run: bool = True,
 
     # season-level TrafficModel settings
-    max_steps: int = 500,
-    max_persons: int = 50,
+    max_steps: int = 99999,
+    max_persons: int = 99999,
     collect_every_n: int = 10,
-    start_hr: int = 5,
-    bus_capacity: int = 30,
+    start_hr: int = 7,
+    bus_capacity: int = 60,
 
     # references to GeoDataFrames (paths or identifiers)
-    road_path: str = None,
-    ecs_path: str= None,
+    road_path: str = 'data/roads/hw210_sl_and_curvs.parquet',
+    ecs_path: str= 'data/vehicle_counts/expected_counts_seconds.csv',
 
     # schedules for day-varying TrafficModel args
     traffic_percentile_schedule: ScheduleSpecs = ScheduleSpecs("static", 50),
@@ -236,3 +236,106 @@ def make_season_config(
         population_params=population_params,
         hybrid_collector_config=hybrid_collector_config
     )
+
+
+def summarize_config(config: SeasonConfig, high_only: bool = True) -> None:
+    """Print a readable summary of a SeasonConfig."""
+
+    lines = []
+    b = lambda s: f"\033[1m{s}\033[0m"  # bold
+
+    # ── High priority ──
+    lines.append(b("── Season Config ──"))
+
+    days = config.n_days
+    pop = config.population_params.population_size if config.population_params else "?"
+    lines.append(f"  {b('Days:')} {days}   {b('Population:')} {pop:,}")
+
+    # traffic percentile per day
+    percs = [dp.traffic_percentile for dp in config.day_params]
+    if len(set(percs)) == 1:
+        lines.append(f"  {b('Traffic percentile:')} {percs[0]} (all days)")
+    else:
+        lines.append(f"  {b('Traffic percentile:')} {percs}")
+
+    # bus interval per day
+    bus_ints = [dp.bus_interval for dp in config.day_params]
+    if len(set(bus_ints)) == 1:
+        val = bus_ints[0]
+        lines.append(f"  {b('Bus interval:')} {'off' if val == 0 else f'{val} min'}   {b('Bus capacity:')} {config.bus_capacity}")
+    else:
+        lines.append(f"  {b('Bus interval:')} {bus_ints} min   {b('Bus capacity:')} {config.bus_capacity}")
+
+    # toll summary
+    tc = config.toll_config
+    if tc._static_toll is not None:
+        toll_desc = f"static ${tc._static_toll:.2f}"
+    elif tc.transform is not None:
+        t = tc.transform
+        tname = type(t).__name__.replace("Transform", "")
+        if hasattr(t, 'target'):
+            toll_desc = f"{tname} → target {t.target}, range ${t.toll_min}–${t.toll_max}"
+        elif hasattr(t, 'threshold'):
+            toll_desc = f"{tname}, threshold={t.threshold}, slope={getattr(t, 'slope', '?')}"
+        else:
+            toll_desc = tname
+        if tc.rounding:
+            toll_desc += f", rounded to ${tc.rounding:.2f}"
+    else:
+        toll_desc = "none"
+    lines.append(f"  {b('Toll:')} {toll_desc}")
+
+    # ── Conditional high ──
+    crashes = [dp.crashes_per_100k_vmt_input for dp in config.day_params]
+    if any(c > 0 for c in crashes):
+        if len(set(crashes)) == 1:
+            lines.append(f"  {b('Crashes:')} {crashes[0]} per 100k VMT")
+        else:
+            lines.append(f"  {b('Crashes:')} {crashes} per 100k VMT")
+
+    closures = [dp.canyon_closures for dp in config.day_params]
+    if any(c is not None for c in closures):
+        n_with = sum(1 for c in closures if c is not None)
+        lines.append(f"  {b('Canyon closures:')} configured on {n_with}/{days} days")
+
+    if config.bus_user_fee > 0:
+        lines.append(f"  {b('Bus user fee:')} ${config.bus_user_fee:.2f}")
+
+    # ── Low priority ──
+    if not high_only:
+        lines.append("")
+        lines.append(b("── Details ──"))
+        lines.append(f"  {b('Start hour:')} {config.start_hr}:00")
+
+        pp = config.population_params
+        if pp:
+            vot = pp.value_of_time
+            vot_str = f"lognorm (median ~${vot.median():.2f}/min)" if hasattr(vot, 'median') else f"${vot:.2f}/min"
+            lines.append(f"  {b('Value of time:')} {vot_str}")
+            lines.append(f"  {b('Priors:')} car={pp.prior_car}, bus={pp.prior_bus}")
+            lines.append(f"  {b('Belief params:')} decay={pp.time_decay_rate}, prior_wt={pp.prior_weight}, uncertainty_mult={pp.uncertainty_multiplier}")
+
+        hc = config.hybrid_collector_config
+        if hc:
+            parts = []
+            if hc.tier1_enabled:
+                parts.append(f"Tier 1 (scalars+histograms every {hc.tier1_interval} steps)")
+            if hc.tier2_enabled:
+                parts.append(f"Tier 2 (spatial snapshots every {hc.tier2_sample_interval} steps, up to {hc.tier2_max_agents_per_sample} agents)")
+            if hc.tier3_enabled:
+                parts.append("Tier 3 (crash & closure event log)")
+            if hc.tier4_enabled:
+                t4 = []
+                if hc.tier4_snapshot_interval > 0:
+                    t4.append(f"every {hc.tier4_snapshot_interval} steps")
+                if hc.tier4_snapshot_on_crash:
+                    t4.append("on crash")
+                parts.append(f"Tier 4 (full snapshots {' & '.join(t4)}, max {hc.tier4_max_snapshots})")
+            if parts:
+                lines.append(f"  {b('Data collection:')}")
+                for p in parts:
+                    lines.append(f"    • {p}")
+            else:
+                lines.append(f"  {b('Data collection:')} all tiers disabled")
+
+    print("\n".join(lines))

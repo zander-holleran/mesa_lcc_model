@@ -35,7 +35,8 @@ class TrafficModel(Model):
                  bus_user_fee: float = 0.0,
                  season_persons=None,
                  current_day = 0,
-                 hybrid_collector_config: HybridCollectorConfig = None
+                 hybrid_collector_config: HybridCollectorConfig = None,
+                 max_concurrent_vehicles: int = 5000,
                  ):
         super().__init__(seed=seed)
 
@@ -126,6 +127,12 @@ class TrafficModel(Model):
         for agent, (x, y) in zip(self.road_segments, self.rs_pos):
             self.space.place_agent(agent, (x, y))
 
+        # Persistent vehicle store (array kernel)
+        from traffic.model.vehicle_store import VehicleStore
+        self.vs = VehicleStore(max_concurrent_vehicles)
+        self.max_concurrent_vehicles = max_concurrent_vehicles
+        self.vid_to_vehicle: dict[int, object] = {}  # vid → VehicleAgent shell
+
         # set up the hybrid data collector using the provided config or fall back to defaults
         collector_config = hybrid_collector_config or HybridCollectorConfig(
             max_steps=max_steps,
@@ -191,40 +198,7 @@ class TrafficModel(Model):
     def update_tolls(self):
         tolling.update_tolls(self)
     
-    def update_next_agents(self):
-        """Update next_agent pointers by sorting all vehicles and blockers."""
-        next_agents = self.vehicles_list + self.blockers_list
-
-        if not next_agents:
-            return
-
-        # Sort by distance, use unique_id for deterministic tie-breaking
-        next_agents.sort(key=lambda a: (a.distance_traveled, a.unique_id))
-
-        # Establish next_agent links
-        last = len(next_agents) - 1
-        for i, a in enumerate(next_agents):
-            na = next_agents[i + 1] if i < last else None
-            a.next_agent = na
-            a.gap = (na.distance_traveled - a.distance_traveled) if na is not None else float("inf")
-    
      # -~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~ Agent method loopers  -~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
-    # vehicles
-    def do_adjust_status(self, agents):
-        for a in agents:
-            a.adjust_status()
-
-    def do_adjust_speed(self, agents):
-        for a in agents:
-            a.adjust_speed()
-
-    def do_move_along_path(self, agents):
-        for a in agents:
-            a.move_along_path()
-
-    def do_calculate_time_lost(self, agents):
-        for a in agents:
-            a.calculate_time_lost()
     # blockers
     def do_tick(self, agents):
             for a in agents:
@@ -244,33 +218,29 @@ class TrafficModel(Model):
         gen.generate_person(self)
         gen.generate_new_bus(self)
 
-        # vehicle functions
-        all_vehicles = self.vehicles_list
-        self.update_next_agents()
-        self.do_adjust_status(all_vehicles)  
+        # Vehicle kernel (replaces update_next_agents, adjust_status/speed, move, time_lost)
+        from traffic.model import vehicle_kernel
+        arrived = vehicle_kernel.step(self)
+        for v in arrived:
+            v.end_of_road()
 
-        driving_vehicles = []
-        for v in all_vehicles:
-            if v.status == "driving" or v.status == "slowing":
-                driving_vehicles.append(v)
-
-        self.do_adjust_speed(driving_vehicles)
-        self.do_move_along_path(driving_vehicles)
-        self.do_calculate_time_lost(all_vehicles)
-
-        # Blocker actions
-        n = len(driving_vehicles)
-        if n:
-            avg_speed_mps = 0.0
-            for veh in driving_vehicles:
-                avg_speed_mps += veh.speed
-            avg_speed_mps /= n
+        # Compute driving vehicle stats from store for crash generation
+        vs = self.vs
+        _n = vs.n_active
+        if _n > 0:
+            _active_mask = (vs.status[:_n] == 0) | (vs.status[:_n] == 1)
+            n_driving = int(_active_mask.sum())
+            if n_driving > 0:
+                avg_speed_mps = float(vs.speed[:_n][_active_mask].mean())
+            else:
+                avg_speed_mps = 1.0
         else:
+            n_driving = 0
             avg_speed_mps = 1.0
 
         self.crashes, self.remainder = self.should_crash_randomized_rounding(
             crashes_per_100k_vmt=self.crashes_per_100k_vmt,
-            num_cars=n,
+            num_cars=n_driving,
             avg_speed_mps=avg_speed_mps,
             remainder=self.remainder,
             rng=self.rng
