@@ -48,10 +48,12 @@ class VehicleStore:
     def add(self, vid: int, veh_type: int, pos_x: float, pos_y: float,
             speed: float, route_end_dist: float,
             acceptable_ov: float, ideal_dm: float, curve_resp: float,
-            performance: float, created_step: int, toll_paid: float) -> int:
+            performance: float, created_step: int, toll_paid: float,
+            init_dist: float = 0.0) -> int:
         """
         Write spawn-time values into the next free slot.
         Dynamic fields (dist, path_idx, seg_s, gap, etc.) start at their zero-initialized values.
+        init_dist: starting distance (negative when spawn point is shifted by too_close).
         Returns the slot index.
         """
         if self.n_active >= self.MAX:
@@ -76,7 +78,7 @@ class VehicleStore:
         self.gap[slot]           = np.inf
         self.status[slot]        = 0  # driving
         self.break_cd[slot]      = 0
-        self.dist[slot]          = 0.0
+        self.dist[slot]          = init_dist
         self.path_idx[slot]      = 0
         self.seg_s[slot]         = 0.0
         self.cumtime_lost[slot]  = 0.0

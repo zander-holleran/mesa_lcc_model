@@ -211,7 +211,8 @@ class TrafficModel(Model):
 
         # establish what p_generate is going to be for that step
         if self.traffic_percentile:
-            self.p_generate = self.expected_counts_seconds.iloc[self.start_step, self.traffic_percentile]
+            idx = min(self.start_step, len(self.expected_counts_seconds) - 1)
+            self.p_generate = self.expected_counts_seconds.iloc[idx, self.traffic_percentile]
             self.start_step += 1
         
         # generate functions

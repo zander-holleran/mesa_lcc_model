@@ -1,3 +1,6 @@
+_MPH_TO_MPS = 1609.34 / 3600  # consistent with unit_conversion_utils.get_mps
+
+
 def too_close(model):
     if not model.vehicles_list:
         return
@@ -13,6 +16,17 @@ def too_close(model):
     if dist < closeness_threshold:
         model.start_point = (model.start_point[0], model.start_point[1]+1)
         model.too_close_counter += 1
+
+def _spawn_offset(model) -> float:
+    """Negative distance from initial_start_point to current start_point.
+
+    Mirrors old VehicleAgent behaviour where distance_traveled started
+    negative so that vehicles spawned behind the road origin don't
+    share dist=0 and deadlock in the sorted-rank gap computation.
+    """
+    ix, iy = model.initial_start_point
+    sx, sy = model.start_point
+    return -((ix - sx)**2 + (iy - sy)**2)**0.5
 
 def generate_new_bus(model):
         # 1. Early exit conditions
@@ -37,7 +51,7 @@ def generate_new_bus(model):
             veh_type=1,
             pos_x=float(model.start_point[0]),
             pos_y=float(model.start_point[1]),
-            speed=0.0,
+            speed=float(model.rs_speed_limit[0] * _MPH_TO_MPS),
             route_end_dist=float(model.rs_cumulative_s[-1]),
             acceptable_ov=float(new_bus.acceptable_over),
             ideal_dm=float(new_bus.ideal_distance_multiplier),
@@ -45,6 +59,7 @@ def generate_new_bus(model):
             performance=float(new_bus.performance),
             created_step=int(model.steps),
             toll_paid=float(new_bus.toll_paid),
+            init_dist=_spawn_offset(model),
         )
         model.vid_to_vehicle[new_bus.unique_id] = new_bus
 
@@ -114,7 +129,7 @@ def generate_person(model):
             veh_type=0,
             pos_x=float(model.start_point[0]),
             pos_y=float(model.start_point[1]),
-            speed=0.0,
+            speed=float(model.rs_speed_limit[0] * _MPH_TO_MPS),
             route_end_dist=float(model.rs_cumulative_s[-1]),
             acceptable_ov=float(new_car.acceptable_over),
             ideal_dm=float(new_car.ideal_distance_multiplier),
@@ -122,6 +137,7 @@ def generate_person(model):
             performance=float(new_car.performance),
             created_step=int(model.steps),
             toll_paid=float(new_car.toll_paid),
+            init_dist=_spawn_offset(model),
         )
         model.vid_to_vehicle[new_car.unique_id] = new_car
 
@@ -136,12 +152,12 @@ def generate_person(model):
         n=1,
         season_person=season_person,
     )[0]
-  
+
     model.agents.add(new_tp)
     tp_list.append(new_tp)
     model.person_counter += 1
     new_tp.created_step = model.steps
-    
+
     if new_tp.mode == "car":
         too_close(model)
 
@@ -158,7 +174,7 @@ def generate_person(model):
             veh_type=0,
             pos_x=float(model.start_point[0]),
             pos_y=float(model.start_point[1]),
-            speed=0.0,
+            speed=float(model.rs_speed_limit[0] * _MPH_TO_MPS),
             route_end_dist=float(model.rs_cumulative_s[-1]),
             acceptable_ov=float(new_car.acceptable_over),
             ideal_dm=float(new_car.ideal_distance_multiplier),
@@ -166,6 +182,7 @@ def generate_person(model):
             performance=float(new_car.performance),
             created_step=int(model.steps),
             toll_paid=float(new_car.toll_paid),
+            init_dist=_spawn_offset(model),
         )
         model.vid_to_vehicle[new_car.unique_id] = new_car
 
