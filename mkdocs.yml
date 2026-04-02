@@ -1,0 +1,69 @@
+site_name: LCC Traffic Model Wiki
+site_url: https://zander-holleran.github.io/mesa_lcc_model/
+repo_url: https://github.com/zander-holleran/mesa_lcc_model
+repo_name: zander-holleran/mesa_lcc_model
+
+theme:
+  name: material
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.tabbed:
+      alternate_style: true
+  - tables
+  - toc:
+      permalink: true
+  - attr_list
+  - def_list
+
+nav:
+  - Home: index.md
+  - Getting Started:
+    - Installation & Setup: getting-started/installation.md
+    - First Run: getting-started/first-run.md
+    - Glossary: getting-started/glossary.md
+  - Domain Model:
+    - LCC Context: domain/lcc-context.md
+    - Person Behavior: domain/person-behavior.md
+    - Vehicle Physics: domain/vehicle-physics.md
+    - Road Network: domain/road-network.md
+    - Bus Service: domain/bus-service.md
+    - Generation & Lifecycle: domain/generation-and-lifecycle.md
+  - Architecture:
+    - System Overview: architecture/system-overview.md
+    - TrafficModel Lifecycle: architecture/traffic-model-lifecycle.md
+    - Agent Taxonomy: architecture/agent-taxonomy.md
+    - Data Collection: architecture/data-collection.md
+    - Tolling System: architecture/tolling-system.md
+  - Experiments & Results:
+    - experiments/index.md

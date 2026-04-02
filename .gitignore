@@ -20,3 +20,6 @@ tests/baselines/*
 notes/
 .DS_Store
 prof.stats
+
+# MkDocs build output
+site/
