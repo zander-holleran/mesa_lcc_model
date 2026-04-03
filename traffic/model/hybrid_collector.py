@@ -34,7 +34,14 @@ class HybridCollectorConfig:
     tier1_scalars: List[str] = field(default_factory=lambda: [
         'step', 'current_toll', 'vehicle_count', 'active_cars', 'active_buses',
         'bus_riders_waiting', 'bus_mode_share_recent', 'total_finished',
-        'recent_travel_time_avg'
+        'p_generate',
+    ])
+
+    # Tier 1: Window-based scalars (use tier1_window_seconds)
+    tier1_window_scalars: List[str] = field(default_factory=lambda: [
+        'recent_travel_time_avg',
+        'rolling_count_vehicles_generated',
+        'rolling_count_persons_generated',
     ])
 
     # Tier 1: Histogram metrics to collect (keys from TIER1_HISTOGRAMS)
@@ -57,8 +64,8 @@ class HybridCollectorConfig:
     tier4_snapshot_on_crash: bool = False
     tier4_max_snapshots: int = 100
 
-    # Recent travel time window (seconds)
-    recent_travel_time_window: int = 300
+    # Window size (seconds) for all tier1 window-based scalars
+    tier1_window_seconds: int = 300
 
 
 # =============================================================================
@@ -86,11 +93,12 @@ def _compute_bus_mode_share(model) -> float:
     return (100.0 * bus_n / recent_n) if recent_n else float('nan')
 
 
-def _compute_recent_travel_time(model, window: int = 300) -> float:
-    """Compute mean travel time of trips completed in last `window` seconds."""
+def _compute_recent_travel_time(model) -> float:
+    """Compute mean travel time of trips completed within tier1_window_seconds."""
     if not model.finished_agents:
         return float('nan')
 
+    window = model.datacollector.config.tier1_window_seconds
     current_step = model.steps
     cutoff = current_step - window
 
@@ -141,9 +149,27 @@ TIER1_SCALARS: Dict[str, Dict[str, Any]] = {
         'dtype': np.int32,
         'fn': lambda m: len(m.finished_agents),
     },
+    'p_generate': {
+        'dtype': np.float32,
+        'fn': lambda m: m.p_generate,
+    },
+}
+
+# Window-based scalar registry
+# 'fn' entries are for scalars computed directly (like recent_travel_time_avg).
+# Rolling count scalars use 'cumulative_fn' — the collector handles the lookback diff.
+TIER1_WINDOW_SCALARS: Dict[str, Dict[str, Any]] = {
     'recent_travel_time_avg': {
         'dtype': np.float32,
         'fn': _compute_recent_travel_time,
+    },
+    'rolling_count_vehicles_generated': {
+        'dtype': np.int32,
+        'cumulative_fn': lambda m: m.car_counter + m.bus_counter,
+    },
+    'rolling_count_persons_generated': {
+        'dtype': np.int32,
+        'cumulative_fn': lambda m: m.person_counter,
     },
 }
 
@@ -176,6 +202,18 @@ class Tier1Collector:
                 dtype = TIER1_SCALARS[name]['dtype']
                 self.scalar_arrays[name] = np.zeros(config.max_steps, dtype=dtype)
 
+        # Pre-allocate window scalar output arrays + internal cumulative arrays
+        self.window_scalar_arrays: Dict[str, np.ndarray] = {}
+        self._cumulative_arrays: Dict[str, np.ndarray] = {}
+        self._lookback = config.tier1_window_seconds // max(1, config.tier1_interval)
+        for name in config.tier1_window_scalars:
+            if name in TIER1_WINDOW_SCALARS:
+                spec = TIER1_WINDOW_SCALARS[name]
+                dtype = spec['dtype']
+                self.window_scalar_arrays[name] = np.zeros(config.max_steps, dtype=dtype)
+                if 'cumulative_fn' in spec:
+                    self._cumulative_arrays[name] = np.zeros(config.max_steps, dtype=dtype)
+
         # Pre-allocate histogram arrays
         self.histogram_arrays: Dict[str, np.ndarray] = {}
         for name in config.tier1_histograms:
@@ -202,6 +240,17 @@ class Tier1Collector:
             fn = TIER1_SCALARS[name]['fn']
             arr[idx] = fn(model)
 
+        # Collect window scalars
+        lookback_idx = max(0, idx - self._lookback)
+        for name, arr in self.window_scalar_arrays.items():
+            spec = TIER1_WINDOW_SCALARS[name]
+            if 'cumulative_fn' in spec:
+                cum_arr = self._cumulative_arrays[name]
+                cum_arr[idx] = spec['cumulative_fn'](model)
+                arr[idx] = cum_arr[idx] - cum_arr[lookback_idx]
+            else:
+                arr[idx] = spec['fn'](model)
+
         # Collect histograms (vectorized reads from store)
         for name, arr in self.histogram_arrays.items():
             hist_config = TIER1_HISTOGRAMS[name]
@@ -226,6 +275,10 @@ class Tier1Collector:
 
         # Add scalar columns
         for name, arr in self.scalar_arrays.items():
+            data[name] = arr[:n]
+
+        # Add window scalar columns
+        for name, arr in self.window_scalar_arrays.items():
             data[name] = arr[:n]
 
         # Add histogram columns (one column per bin)

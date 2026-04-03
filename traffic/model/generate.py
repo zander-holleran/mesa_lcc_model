@@ -113,11 +113,15 @@ def generate_person(model):
     if season_person is None and not any_unfinished:
         return
 
-    if season_person is None and any_unfinished: # out of new persons to generate BUT we still have persons in the system
+    if season_person is None and any_unfinished:
+        # out of new persons to generate BUT we still have persons in the system
         # Scale by the observed car fraction so we don't inflate car generation
         # relative to normal state (where only car-choosing persons generate vehicles).
-        car_fraction = model.car_counter / model.person_counter if model.person_counter > 0 else 1.0
-        if model.random.random() >= car_fraction:
+        # Freeze car_fraction at the moment we enter exception state so that
+        # empty-car generation doesn't inflate the ratio over time.
+        if model._exception_car_fraction is None:
+            model._exception_car_fraction = model.car_counter / model.person_counter
+        if model.random.random() >= model._exception_car_fraction:
             return
         # keep generating empty cars to maintain traffic
         too_close(model)

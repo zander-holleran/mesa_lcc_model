@@ -105,7 +105,9 @@ class TrafficModel(Model):
         self.total_crashes = 0
 
         # ===== verious trackers =====
-        self.too_close_counter = 0 
+        self._p_generate_frozen = False
+        self._exception_car_fraction = None
+        self.too_close_counter = 0
         self.person_counter = 0 
         self.bus_counter = 0 
         self.car_counter = 0 
@@ -211,9 +213,16 @@ class TrafficModel(Model):
 
         # establish what p_generate is going to be for that step
         if self.traffic_percentile:
-            idx = min(self.start_step, len(self.expected_counts_seconds) - 1)
-            self.p_generate = self.expected_counts_seconds.iloc[idx, self.traffic_percentile]
-            self.start_step += 1
+            if self.season_person_pool:
+                idx = min(self.start_step, len(self.expected_counts_seconds) - 1)
+                self.p_generate = self.expected_counts_seconds.iloc[idx, self.traffic_percentile]
+                self.start_step += 1
+            elif not self._p_generate_frozen:
+                # Clamp at the trailing average so background cars don't escalate
+                col = self.expected_counts_seconds.iloc[:, self.traffic_percentile]
+                lookback = min(3600, self.start_step)
+                self.p_generate = float(col.iloc[self.start_step - lookback:self.start_step].mean())
+                self._p_generate_frozen = True
         
         # generate functions
         gen.generate_person(self)
