@@ -1,10 +1,32 @@
-def too_close(model): 
-    vehicles = model.agents.select(agent_type=model.agent_cls['vehicle'])
+_MPH_TO_MPS = 1609.34 / 3600  # consistent with unit_conversion_utils.get_mps
 
-    closeness_threshold = 1 
-    if vehicles and model.space.get_distance(vehicles[-1].pos, model.start_point) < closeness_threshold: # check if the last vehicle is withen x m of the start point
-        model.start_point = (model.start_point[0], model.start_point[1]+1) # if the car is too close move the start point north
+
+def too_close(model):
+    if not model.vehicles_list:
+        return
+    v = model.vehicles_list[-1]
+    vs = model.vs
+    slot = vs.vid_to_slot.get(v.unique_id)
+    if slot is None:
+        return
+    vx, vy = float(vs.pos_x[slot]), float(vs.pos_y[slot])
+    sx, sy = model.start_point
+    dist = ((vx - sx)**2 + (vy - sy)**2)**0.5
+    closeness_threshold = 1
+    if dist < closeness_threshold:
+        model.start_point = (model.start_point[0], model.start_point[1]+1)
         model.too_close_counter += 1
+
+def _spawn_offset(model) -> float:
+    """Negative distance from initial_start_point to current start_point.
+
+    Mirrors old VehicleAgent behaviour where distance_traveled started
+    negative so that vehicles spawned behind the road origin don't
+    share dist=0 and deadlock in the sorted-rank gap computation.
+    """
+    ix, iy = model.initial_start_point
+    sx, sy = model.start_point
+    return -((ix - sx)**2 + (iy - sy)**2)**0.5
 
 def generate_new_bus(model):
         # 1. Early exit conditions
@@ -22,6 +44,24 @@ def generate_new_bus(model):
         new_bus = model.agent_cls['bus'].create_agents(model=model, n=1)[0]
         model.agents.add(new_bus)
         model.vehicles_list.append(new_bus)
+
+        # Register in VehicleStore
+        model.vs.add(
+            vid=new_bus.unique_id,
+            veh_type=1,
+            pos_x=float(model.start_point[0]),
+            pos_y=float(model.start_point[1]),
+            speed=float(model.rs_speed_limit[0] * _MPH_TO_MPS),
+            route_end_dist=float(model.rs_cumulative_s[-1]),
+            acceptable_ov=float(new_bus.acceptable_over),
+            ideal_dm=float(new_bus.ideal_distance_multiplier),
+            curve_resp=float(new_bus.curve_responce),
+            performance=float(new_bus.performance),
+            created_step=int(model.steps),
+            toll_paid=float(new_bus.toll_paid),
+            init_dist=_spawn_offset(model),
+        )
+        model.vid_to_vehicle[new_bus.unique_id] = new_bus
 
         # FCFS boarding from the single queue
         capacity = model.bus_capacity
@@ -73,18 +113,46 @@ def generate_person(model):
     if season_person is None and not any_unfinished:
         return
 
-    if season_person is None and any_unfinished: # out of new persons to generate BUT we still have persons in the system
+    if season_person is None and any_unfinished:
+        # out of new persons to generate BUT we still have persons in the system
+        # Scale by the observed car fraction so we don't inflate car generation
+        # relative to normal state (where only car-choosing persons generate vehicles).
+        # Freeze car_fraction at the moment we enter exception state so that
+        # empty-car generation doesn't inflate the ratio over time.
+        if model._exception_car_fraction is None:
+            model._exception_car_fraction = model.car_counter / model.person_counter
+        if model.random.random() >= model._exception_car_fraction:
+            return
         # keep generating empty cars to maintain traffic
-        too_close(model) 
+        too_close(model)
         new_car = model.agent_cls['car'].create_agents(
             model=model,
             n=1,
         )[0]
         model.agents.add(new_car)
         model.vehicles_list.append(new_car)
+
+        # Register in VehicleStore
+        model.vs.add(
+            vid=new_car.unique_id,
+            veh_type=0,
+            pos_x=float(model.start_point[0]),
+            pos_y=float(model.start_point[1]),
+            speed=float(model.rs_speed_limit[0] * _MPH_TO_MPS),
+            route_end_dist=float(model.rs_cumulative_s[-1]),
+            acceptable_ov=float(new_car.acceptable_over),
+            ideal_dm=float(new_car.ideal_distance_multiplier),
+            curve_resp=float(new_car.curve_responce),
+            performance=float(new_car.performance),
+            created_step=int(model.steps),
+            toll_paid=float(new_car.toll_paid),
+            init_dist=_spawn_offset(model),
+        )
+        model.vid_to_vehicle[new_car.unique_id] = new_car
+
         # empty car: no passengers to link
         model.car_counter += 1
-        return  
+        return
 
 
     # 2. Normal case: there are persons left to generate
@@ -93,12 +161,12 @@ def generate_person(model):
         n=1,
         season_person=season_person,
     )[0]
-  
+
     model.agents.add(new_tp)
     tp_list.append(new_tp)
     model.person_counter += 1
     new_tp.created_step = model.steps
-    
+
     if new_tp.mode == "car":
         too_close(model)
 
@@ -108,6 +176,24 @@ def generate_person(model):
         )[0]
         model.agents.add(new_car)
         model.vehicles_list.append(new_car)
+
+        # Register in VehicleStore
+        model.vs.add(
+            vid=new_car.unique_id,
+            veh_type=0,
+            pos_x=float(model.start_point[0]),
+            pos_y=float(model.start_point[1]),
+            speed=float(model.rs_speed_limit[0] * _MPH_TO_MPS),
+            route_end_dist=float(model.rs_cumulative_s[-1]),
+            acceptable_ov=float(new_car.acceptable_over),
+            ideal_dm=float(new_car.ideal_distance_multiplier),
+            curve_resp=float(new_car.curve_responce),
+            performance=float(new_car.performance),
+            created_step=int(model.steps),
+            toll_paid=float(new_car.toll_paid),
+            init_dist=_spawn_offset(model),
+        )
+        model.vid_to_vehicle[new_car.unique_id] = new_car
 
         # double link: person <-> car
         new_tp.vehicle = new_car
@@ -134,8 +220,10 @@ def pick_occupied_segment(model):
     if not model.vehicles_list:
         return None
     v = model.random.choice(model.vehicles_list)
-    seg_i = v.path_index
-    return seg_i
+    slot = model.vs.vid_to_slot.get(v.unique_id)
+    if slot is None:
+        return None
+    return int(model.vs.path_idx[slot])
 
 def generate_crash(model): 
     if model.crashes == 0:

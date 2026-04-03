@@ -34,7 +34,14 @@ class HybridCollectorConfig:
     tier1_scalars: List[str] = field(default_factory=lambda: [
         'step', 'current_toll', 'vehicle_count', 'active_cars', 'active_buses',
         'bus_riders_waiting', 'bus_mode_share_recent', 'total_finished',
-        'recent_travel_time_avg'
+        'p_generate',
+    ])
+
+    # Tier 1: Window-based scalars (use tier1_window_seconds)
+    tier1_window_scalars: List[str] = field(default_factory=lambda: [
+        'recent_travel_time_avg',
+        'rolling_count_vehicles_generated',
+        'rolling_count_persons_generated',
     ])
 
     # Tier 1: Histogram metrics to collect (keys from TIER1_HISTOGRAMS)
@@ -57,8 +64,8 @@ class HybridCollectorConfig:
     tier4_snapshot_on_crash: bool = False
     tier4_max_snapshots: int = 100
 
-    # Recent travel time window (seconds)
-    recent_travel_time_window: int = 300
+    # Window size (seconds) for all tier1 window-based scalars
+    tier1_window_seconds: int = 300
 
 
 # =============================================================================
@@ -86,11 +93,12 @@ def _compute_bus_mode_share(model) -> float:
     return (100.0 * bus_n / recent_n) if recent_n else float('nan')
 
 
-def _compute_recent_travel_time(model, window: int = 300) -> float:
-    """Compute mean travel time of trips completed in last `window` seconds."""
+def _compute_recent_travel_time(model) -> float:
+    """Compute mean travel time of trips completed within tier1_window_seconds."""
     if not model.finished_agents:
         return float('nan')
 
+    window = model.datacollector.config.tier1_window_seconds
     current_step = model.steps
     cutoff = current_step - window
 
@@ -141,23 +149,41 @@ TIER1_SCALARS: Dict[str, Dict[str, Any]] = {
         'dtype': np.int32,
         'fn': lambda m: len(m.finished_agents),
     },
+    'p_generate': {
+        'dtype': np.float32,
+        'fn': lambda m: m.p_generate,
+    },
+}
+
+# Window-based scalar registry
+# 'fn' entries are for scalars computed directly (like recent_travel_time_avg).
+# Rolling count scalars use 'cumulative_fn' — the collector handles the lookback diff.
+TIER1_WINDOW_SCALARS: Dict[str, Dict[str, Any]] = {
     'recent_travel_time_avg': {
         'dtype': np.float32,
         'fn': _compute_recent_travel_time,
     },
+    'rolling_count_vehicles_generated': {
+        'dtype': np.int32,
+        'cumulative_fn': lambda m: m.car_counter + m.bus_counter,
+    },
+    'rolling_count_persons_generated': {
+        'dtype': np.int32,
+        'cumulative_fn': lambda m: m.person_counter,
+    },
 }
 
-# Histogram metric registry
+# Histogram metric registry — functions take the model and return an array of values
 TIER1_HISTOGRAMS: Dict[str, Dict[str, Any]] = {
     'implicit_sl_delta': {
         'bins': np.array([-np.inf, -30, -20, -10, 0, np.inf]),
         'dtype': np.int16,
-        'fn': lambda v: uc.get_mph(v.speed) - v.implicit_speed_limit,
+        'fn': lambda m: m.vs.speed_delta[:m.vs.n_active].copy() if m.vs.n_active > 0 else np.array([]),
     },
     'speed_mps': {
         'bins': np.array([0, 10, 20, 30, 40, np.inf]),
         'dtype': np.int16,
-        'fn': lambda v: v.speed,
+        'fn': lambda m: m.vs.speed[:m.vs.n_active].copy() if m.vs.n_active > 0 else np.array([]),
     },
 }
 
@@ -175,6 +201,18 @@ class Tier1Collector:
             if name in TIER1_SCALARS:
                 dtype = TIER1_SCALARS[name]['dtype']
                 self.scalar_arrays[name] = np.zeros(config.max_steps, dtype=dtype)
+
+        # Pre-allocate window scalar output arrays + internal cumulative arrays
+        self.window_scalar_arrays: Dict[str, np.ndarray] = {}
+        self._cumulative_arrays: Dict[str, np.ndarray] = {}
+        self._lookback = config.tier1_window_seconds // max(1, config.tier1_interval)
+        for name in config.tier1_window_scalars:
+            if name in TIER1_WINDOW_SCALARS:
+                spec = TIER1_WINDOW_SCALARS[name]
+                dtype = spec['dtype']
+                self.window_scalar_arrays[name] = np.zeros(config.max_steps, dtype=dtype)
+                if 'cumulative_fn' in spec:
+                    self._cumulative_arrays[name] = np.zeros(config.max_steps, dtype=dtype)
 
         # Pre-allocate histogram arrays
         self.histogram_arrays: Dict[str, np.ndarray] = {}
@@ -202,24 +240,28 @@ class Tier1Collector:
             fn = TIER1_SCALARS[name]['fn']
             arr[idx] = fn(model)
 
-        # Collect histograms
-        vehicles = model.vehicles_list
+        # Collect window scalars
+        lookback_idx = max(0, idx - self._lookback)
+        for name, arr in self.window_scalar_arrays.items():
+            spec = TIER1_WINDOW_SCALARS[name]
+            if 'cumulative_fn' in spec:
+                cum_arr = self._cumulative_arrays[name]
+                cum_arr[idx] = spec['cumulative_fn'](model)
+                arr[idx] = cum_arr[idx] - cum_arr[lookback_idx]
+            else:
+                arr[idx] = spec['fn'](model)
+
+        # Collect histograms (vectorized reads from store)
         for name, arr in self.histogram_arrays.items():
             hist_config = TIER1_HISTOGRAMS[name]
             bins = hist_config['bins']
             fn = hist_config['fn']
-
-            # Reset bin counts for this step
-            counts = np.zeros(len(bins) - 1, dtype=np.int16)
-
-            # Bin each vehicle's value
-            for v in vehicles:
-                val = fn(v)
-                bin_idx = np.searchsorted(bins, val, side='right') - 1
-                bin_idx = max(0, min(bin_idx, len(counts) - 1))
-                counts[bin_idx] += 1
-
-            arr[idx] = counts
+            values = fn(model)
+            if len(values) > 0:
+                counts, _ = np.histogram(values, bins=bins)
+                arr[idx] = counts.astype(np.int16)
+            else:
+                arr[idx] = 0
 
         self._write_idx += 1
 
@@ -233,6 +275,10 @@ class Tier1Collector:
 
         # Add scalar columns
         for name, arr in self.scalar_arrays.items():
+            data[name] = arr[:n]
+
+        # Add window scalar columns
+        for name, arr in self.window_scalar_arrays.items():
             data[name] = arr[:n]
 
         # Add histogram columns (one column per bin)
@@ -254,14 +300,13 @@ class Tier1Collector:
 class Tier2Collector:
     """Collects spatial agent data at configurable intervals for animations."""
 
-    # Encoding maps
+    # Encoding maps (matches kernel constants)
     STATUS_MAP = {'driving': 0, 'slowing': 1, 'crash': 2, 'canyon_closure': 3, 'arrived': 4}
     STATUS_DECODE = {v: k for k, v in STATUS_MAP.items()}
 
     ACTION_MAP = {
-        'coast': 0, 'accelerate': 1, 'slow_accelerate': 2,
-        'smooth_break': 3, 'speed_limit_break': 4, 'prevent_pass': 5,
-        'jitter': 6
+        'accelerate': 0, 'coast': 1, 'slow_accelerate': 2,
+        'speed_limit_break': 3, 'smooth_break': 4, 'prevent_pass': 5,
     }
     ACTION_DECODE = {v: k for k, v in ACTION_MAP.items()}
 
@@ -286,30 +331,37 @@ class Tier2Collector:
         self.speed_mps = np.zeros(max_records, dtype=np.float32)
 
     def collect(self, model) -> None:
-        """Collect spatial data if at sample interval."""
+        """Collect spatial data if at sample interval. Reads from VehicleStore."""
         if model.steps % self._sample_interval != 0:
             return
 
+        vs = model.vs
+        n = vs.n_active
+        if n == 0:
+            return
+
         step_val = model.steps
+        space_left = len(self.step) - self._write_idx
+        n_write = min(n, space_left)
+        if n_write <= 0:
+            return
 
-        for v in model.vehicles_list:
-            if self._write_idx >= len(self.step):
-                return  # Buffer full
+        i = self._write_idx
+        j = i + n_write
 
-            i = self._write_idx
-            self.step[i] = step_val
-            self.agent_id[i] = v.unique_id
-            self.agent_type[i] = 1 if v.__class__.__name__ == 'BusAgent' else 0
-            self.pos_x[i] = v.pos[0]
-            self.pos_y[i] = v.pos[1]
-            self.status[i] = self.STATUS_MAP.get(v.status, 0)
-            self.distance_traveled[i] = v.distance_traveled
-            self.gap_m[i] = min(v.gap, 9999.0)
-            self.ideal_gap_m[i] = v.ideal_gap
-            self.driving_action[i] = self.ACTION_MAP.get(v.driving_action, 0)
-            self.speed_mps[i] = v.speed
+        self.step[i:j] = step_val
+        self.agent_id[i:j] = vs.slot_to_vid[:n_write]
+        self.agent_type[i:j] = vs.veh_type[:n_write]
+        self.pos_x[i:j] = vs.pos_x[:n_write].astype(np.float32)
+        self.pos_y[i:j] = vs.pos_y[:n_write].astype(np.float32)
+        self.status[i:j] = vs.status[:n_write]
+        self.distance_traveled[i:j] = vs.dist[:n_write].astype(np.float32)
+        self.gap_m[i:j] = np.minimum(vs.gap[:n_write], 9999.0).astype(np.float32)
+        self.ideal_gap_m[i:j] = vs.ideal_gap[:n_write].astype(np.float32)
+        self.driving_action[i:j] = vs.driving_action[:n_write]
+        self.speed_mps[i:j] = vs.speed[:n_write].astype(np.float32)
 
-            self._write_idx += 1
+        self._write_idx = j
 
     def to_dataframe(self) -> pd.DataFrame:
         """Convert to animation-compatible DataFrame format."""
@@ -434,6 +486,9 @@ class Tier4Collector:
         if not should_snap:
             return
 
+        vs = model.vs
+        n = vs.n_active
+        status_decode = {0: 'driving', 1: 'slowing', 2: 'crash', 3: 'canyon_closure'}
         snapshot = {
             'step': model.steps,
             'trigger': trigger,
@@ -448,14 +503,14 @@ class Tier4Collector:
             },
             'agents': [
                 {
-                    'agent_id': v.unique_id,
-                    'agent_type': v.__class__.__name__,
-                    'pos': v.pos,
-                    'speed': v.speed,
-                    'status': v.status,
-                    'distance_traveled': v.distance_traveled,
+                    'agent_id': int(vs.slot_to_vid[s]),
+                    'agent_type': 'CarAgent' if vs.veh_type[s] == 0 else 'BusAgent',
+                    'pos': (float(vs.pos_x[s]), float(vs.pos_y[s])),
+                    'speed': float(vs.speed[s]),
+                    'status': status_decode.get(int(vs.status[s]), 'driving'),
+                    'distance_traveled': float(vs.dist[s]),
                 }
-                for v in model.vehicles_list
+                for s in range(n)
             ],
         }
         self.snapshots.append(snapshot)
