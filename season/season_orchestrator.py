@@ -4,6 +4,7 @@ from __future__ import annotations
 import copy
 from dataclasses import dataclass, asdict
 from pathlib import Path
+import shutil
 from typing import Any, Dict, Iterable, List, Optional, Protocol
 
 import json
@@ -43,8 +44,10 @@ class SeasonOrchestrator:
         self.output_dir = None
         if store_data:
             self.output_dir = Path(output_root_dir) / self.config.season_id
+            if self.output_dir.exists():
+                shutil.rmtree(self.output_dir)
+            self.output_dir.mkdir(parents=True)
             print(f"Season outputs will be saved to: {self.output_dir}")
-            self.output_dir.mkdir(parents=True, exist_ok=True)
 
         self.last_model_run = None
         self._next_day_ix = 0
@@ -237,11 +240,14 @@ class SeasonOrchestrator:
 
         share_bus = len(bus_df) / total_persons if total_persons > 0 else 0.0
 
+        # Extract median VOT once for efficiency
+        median_vot = self.config.population_params.value_of_time.median()
+
         # total pop metrics
         avg_tt                = day_df["realized_tt"].mean()
         avg_cumtime_lost_min  = day_df["cumtime_lost_min"].mean()
-        avg_realized_cost     = day_df["realized_cost"].mean() 
-        avg_realized_cost_vot_standardized = day_df["realized_tt"].mean() * self.config.population_params.value_of_time.median() + day_df["toll_paid"].mean()
+        avg_realized_cost     = day_df["realized_cost"].mean()
+        avg_realized_cost_vot_standardized = day_df["realized_tt"].mean() * median_vot + day_df["toll_paid"].mean()
 
         # bus metrics
         avg_wait_bus          = bus_df["wait_time"].mean()
@@ -255,7 +261,20 @@ class SeasonOrchestrator:
         avg_toll_car          = car_df["toll_paid"].mean()
         total_toll_car        = car_df["toll_paid"].sum()
         avg_cumlost_car       = car_df["cumtime_lost_min"].mean()
-        avg_realized_cost_car = bus_df["realized_cost"].mean() 
+        avg_realized_cost_car = car_df["realized_cost"].mean()
+
+        # VOT-standardized cost by mode
+        avg_realized_cost_vot_standardized_bus = (
+            bus_df["realized_tt"].mean() * median_vot + bus_df["toll_paid"].mean()
+            if not bus_df.empty else float("nan")
+        )
+        avg_realized_cost_vot_standardized_car = (
+            car_df["realized_tt"].mean() * median_vot + car_df["toll_paid"].mean()
+            if not car_df.empty else float("nan")
+        )
+        avg_realized_cost_vot_standardized_bus_car_delta = abs(
+            avg_realized_cost_vot_standardized_bus - avg_realized_cost_vot_standardized_car
+        ) 
 
         summary = {
             "day_index": day_index,
@@ -263,6 +282,9 @@ class SeasonOrchestrator:
             "avg_cum_time_lost": avg_cumtime_lost_min,
             "avg_realized_cost": avg_realized_cost,
             "avg_realized_cost_vot_standardized":avg_realized_cost_vot_standardized,
+            "avg_realized_cost_vot_standardized_bus": avg_realized_cost_vot_standardized_bus,
+            "avg_realized_cost_vot_standardized_car": avg_realized_cost_vot_standardized_car,
+            "avg_realized_cost_vot_standardized_bus_car_delta": avg_realized_cost_vot_standardized_bus_car_delta,
             "total_persons": total_persons,
             "share_bus": share_bus,
             "avg_wait_bus": avg_wait_bus,
@@ -591,6 +613,10 @@ class SeasonOrchestrator:
             "total_toll_car",
             "avg_cumlost_bus",
             "avg_cumlost_car",
+            "avg_realized_cost_vot_standardized",
+            "avg_realized_cost_vot_standardized_bus",
+            "avg_realized_cost_vot_standardized_car",
+            "avg_realized_cost_vot_standardized_bus_car_delta",
         ]
         first = [c for c in col_order if c in df.columns]
         rest = [c for c in df.columns if c not in first]

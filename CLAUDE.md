@@ -2,6 +2,14 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Environment
+
+Conda env: `mesa-lcc`
+Python: `/Users/zanderholleran/anaconda3/envs/mesa-lcc/bin/python`
+
+All bash commands and Python invocations must use this interpreter.
+To recreate: `conda env create -f environment.yml`
+
 ## Overview
 
 This is a Mesa-based agent-based simulation of vehicle traffic in Little Cottonwood Canyon (LCC), Utah. It models person-level trip decisions, vehicle dynamics, road geometry, tolling, and bus service across single days and multi-day "seasons."
@@ -17,9 +25,9 @@ To run notebooks:
 jupyter lab
 ```
 
-Install dependencies:
+Set up environment (first time):
 ```bash
-pip install -r requirements.txt
+conda env create -f environment.yml && conda activate mesa-lcc && pip install -e .
 ```
 
 ## Testing

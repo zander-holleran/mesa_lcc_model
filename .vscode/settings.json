@@ -1,0 +1,7 @@
+{
+    "python.defaultInterpreterPath": "/Users/zanderholleran/anaconda3/envs/mesa-lcc/bin/python",
+    "python.analysis.extraPaths": ["${workspaceFolder}"],
+    "python.terminal.activateEnvironment": true,
+    "jupyter.notebookFileRoot": "${workspaceFolder}",
+    "jupyter.defaultKernel": "mesa-lcc"
+}

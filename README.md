@@ -20,7 +20,8 @@ Key folders and files:
 - `traffic/`: Core traffic simulation (agents, model, utilities).
 - `season/`: Season configuration, person generation, and orchestration logic.
 - `collect_external_data/`: Scripts for loading or preprocessing road and vehicle count data.
-- `requirements.txt`: Python dependencies.
+- `pyproject.toml`: Project metadata and direct dependencies.
+- `environment.yml`: Full conda environment snapshot for exact reproduction.
 
 Historical notebooks such as `main.ipynb` or `batch_run.ipynb` are no longer the primary workflow; prefer the season notebooks above for up-to-date examples.
 

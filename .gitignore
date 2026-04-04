@@ -23,3 +23,6 @@ prof.stats
 
 # MkDocs build output
 site/
+
+# Editable install artifacts
+*.egg-info/

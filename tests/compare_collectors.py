@@ -25,7 +25,6 @@ Available collectors:  pre, small, medium, large, matched, lean
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from perf_utils import (
     compare_collector_configs, SCENARIOS, COLLECTOR_PRESETS, DEFAULT_SEED,

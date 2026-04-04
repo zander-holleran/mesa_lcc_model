@@ -18,8 +18,6 @@ import pandas as pd
 import sys
 from pathlib import Path
 
-# Add project root to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from season.season_orchestrator import SeasonOrchestrator
 from season.configs import make_season_config, PopulationParams, ScheduleSpecs

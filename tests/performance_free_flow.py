@@ -23,7 +23,6 @@ Usage:
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from perf_utils import (
     get_collector_config, get_free_flow_config,

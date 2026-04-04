@@ -9,7 +9,6 @@ import sys
 import time
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import pandas as pd
 from season.season_orchestrator import SeasonOrchestrator
