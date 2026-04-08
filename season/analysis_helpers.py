@@ -39,10 +39,6 @@ def load_model_ts(run_dir: Path):
 def load_run(run_id: str, base_dir: Path = BASE_DIR):
     run_dir = base_dir / run_id
 
-    # load season_summary.json if it exists
-    summary_path = run_dir / "season_summary.json"
-    season_summary = json.loads(summary_path.read_text()) if summary_path.exists() else None
-
     data = {
         'run_dir': run_dir,
         'trip_log': _read_parquet_optional(run_dir / 'trip_log.parquet'),
@@ -50,7 +46,7 @@ def load_run(run_id: str, base_dir: Path = BASE_DIR):
         'season_person_log': _read_parquet_optional(run_dir / 'season_person_log.parquet'),
         'sp_day_summary': _read_parquet_optional(run_dir / 'sp_day_summary.parquet'),
         'model_ts': load_model_ts(run_dir),
-        'season_summary': season_summary,
+        'season_summary': _read_parquet_optional(run_dir / 'season_summary.parquet'),
     }
     return data
 

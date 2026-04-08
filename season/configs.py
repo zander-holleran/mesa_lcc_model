@@ -5,6 +5,7 @@ from season.persons import SeasonPerson
 from scipy.stats import lognorm, skewnorm, norm
 from traffic.model.hybrid_collector import HybridCollectorConfig
 from traffic.model.tolling import TollConfig
+from traffic.model.bus_system_cost import BusCostConfig
 
 # ===================== The following are imputs to SeasonConfig ====================== #
 @dataclass
@@ -145,6 +146,9 @@ class SeasonConfig:
     toll_config: TollConfig = field(default_factory=lambda: TollConfig.static(car=0.0))
     bus_user_fee: float = 0.0
 
+    # bus cost estimation (post-hoc, zero sim overhead)
+    bus_cost_config: Optional[BusCostConfig] = None
+
     # the actual per-day parameters
     day_params: List[DayParams] = field(default_factory=list)
     
@@ -185,6 +189,9 @@ def make_season_config(
     # toll configuration
     toll: TollConfig = None,
     bus_user_fee: float = 0.0,
+
+    # bus cost estimation
+    bus_cost_config: BusCostConfig = None,
 
     population_params: PopulationParams = None,
 
@@ -231,6 +238,7 @@ def make_season_config(
         ecs_path=ecs_path,
         toll_config=toll if toll is not None else TollConfig.static(car=0.0),
         bus_user_fee=bus_user_fee,
+        bus_cost_config=bus_cost_config,
         # per-day parameters sent to TrafficModel
         day_params=day_params,
         population_params=population_params,
@@ -284,6 +292,14 @@ def summarize_config(config: SeasonConfig, high_only: bool = True) -> None:
     else:
         toll_desc = "none"
     lines.append(f"  {b('Toll:')} {toll_desc}")
+
+    # bus cost config
+    if config.bus_cost_config is not None:
+        bc = config.bus_cost_config
+        lines.append(f"  {b('Bus cost:')} enabled (${bc.bus_purchase_price:,.0f}/bus, "
+                     f"${bc.driver_hourly_rate}/hr driver, {bc.service_days_per_year:.0f} days/yr)")
+    else:
+        lines.append(f"  {b('Bus cost:')} not configured")
 
     # ── Conditional high ──
     crashes = [dp.crashes_per_100k_vmt_input for dp in config.day_params]
