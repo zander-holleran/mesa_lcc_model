@@ -151,9 +151,6 @@ def finished_agents_summary_df(model, plots=True):
     return finished_agents
 
 def vehicle_agent_data_time_series(model, plots=True):
-    if model.batchrun == True:
-        return None
-
     # Use Tier 2 data from hybrid collector
     vehicles_full = model.datacollector.get_tier2_dataframe()
     if vehicles_full.empty:

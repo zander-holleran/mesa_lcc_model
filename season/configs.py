@@ -128,12 +128,10 @@ class SeasonConfig:
     run_description: str
     seed: int
     n_days: int
-    batch_run: bool = True
-
     # TrafficModel season-level args
     max_steps: int = 50000
     max_persons: int = 50
-    collect_every_n: int = 10  
+    max_concurrent_vehicles: int = 5000
     start_hr: int = 5
     bus_capacity: int = 30
 
@@ -167,12 +165,10 @@ def make_season_config(
     run_description: str,
     seed: int,
     n_days: int,
-    batch_run: bool = True,
-
     # season-level TrafficModel settings
     max_steps: int = 99999,
     max_persons: int = 99999,
-    collect_every_n: int = 10,
+    max_concurrent_vehicles: int = 5000,
     start_hr: int = 7,
     bus_capacity: int = 60,
 
@@ -227,11 +223,10 @@ def make_season_config(
         run_description=run_description,
         seed=seed,
         n_days=n_days,
-        batch_run=batch_run,
         # season level TrafficModel args
         max_steps=max_steps,
         max_persons=max_persons,
-        collect_every_n=collect_every_n,
+        max_concurrent_vehicles=max_concurrent_vehicles,
         start_hr=start_hr,
         bus_capacity=bus_capacity,
         road_path=road_path,

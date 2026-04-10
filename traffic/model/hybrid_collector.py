@@ -33,13 +33,15 @@ class HybridCollectorConfig:
     # Tier 1: Scalar metrics to collect (keys from TIER1_SCALARS)
     tier1_scalars: List[str] = field(default_factory=lambda: [
         'step', 'current_toll', 'vehicle_count', 'active_cars', 'active_buses',
-        'bus_riders_waiting', 'bus_mode_share_recent', 'total_finished',
+        'persons_at_bus_stop', 'persons_finished',
+        'persons_pool_remaining', 'persons_in_transit',
         'p_generate',
     ])
 
     # Tier 1: Window-based scalars (use tier1_window_seconds)
     tier1_window_scalars: List[str] = field(default_factory=lambda: [
         'recent_travel_time_avg',
+        'bus_mode_share_recent',
         'rolling_count_vehicles_generated',
         'rolling_count_persons_generated',
     ])
@@ -73,19 +75,16 @@ class HybridCollectorConfig:
 # =============================================================================
 
 def _compute_bus_mode_share(model) -> float:
-    """Compute % of recent persons who chose bus."""
+    """Compute % of persons created within tier1_window_seconds who chose bus."""
     persons = model.traffic_persons_list
     if not persons:
         return float('nan')
 
-    window = model.collect_every_n if model.collect_every_n >= 1 else 1
-    upper = model.steps
-    lower = max(0, upper - window + 1)
-
+    cutoff = model.steps - model.datacollector.config.tier1_window_seconds
     recent_n = 0
     bus_n = 0
     for p in persons:
-        if lower <= p.created_step <= upper:
+        if p.created_step >= cutoff:
             recent_n += 1
             if p.mode == "bus":
                 bus_n += 1
@@ -137,17 +136,21 @@ TIER1_SCALARS: Dict[str, Dict[str, Any]] = {
         'dtype': np.int16,
         'fn': lambda m: sum(1 for v in m.vehicles_list if v.__class__.__name__ == 'BusAgent'),
     },
-    'bus_riders_waiting': {
+    'persons_at_bus_stop': {
         'dtype': np.int16,
         'fn': lambda m: len(m.at_bus_stop),
     },
-    'bus_mode_share_recent': {
-        'dtype': np.float32,
-        'fn': _compute_bus_mode_share,
-    },
-    'total_finished': {
+    'persons_finished': {
         'dtype': np.int32,
         'fn': lambda m: len(m.finished_agents),
+    },
+    'persons_pool_remaining': {
+        'dtype': np.int16,
+        'fn': lambda m: len(m.season_person_pool),
+    },
+    'persons_in_transit': {
+        'dtype': np.int16,
+        'fn': lambda m: len(m.traffic_persons_list),
     },
     'p_generate': {
         'dtype': np.float32,
@@ -162,6 +165,10 @@ TIER1_WINDOW_SCALARS: Dict[str, Dict[str, Any]] = {
     'recent_travel_time_avg': {
         'dtype': np.float32,
         'fn': _compute_recent_travel_time,
+    },
+    'bus_mode_share_recent': {
+        'dtype': np.float32,
+        'fn': _compute_bus_mode_share,
     },
     'rolling_count_vehicles_generated': {
         'dtype': np.int32,

@@ -26,8 +26,10 @@ from season.configs import SeasonConfig
 class SeasonOrchestrator:
     """Run a series of daily simulations and persist their outputs."""
 
-    def __init__(self, season_config: SeasonConfig,  store_data: bool = False , output_root_dir: str = "data/season_outputs"):
+    def __init__(self, season_config: SeasonConfig, store_data: bool = False,
+                 output_root_dir: str = "data/season_outputs", silent: bool = False):
         self.config = season_config
+        self.silent = silent
 
         self.road_gdf = gpd.read_parquet(self.config.road_path)
         self.ecs_df = pd.read_csv(self.config.ecs_path)
@@ -47,7 +49,8 @@ class SeasonOrchestrator:
             if self.output_dir.exists():
                 shutil.rmtree(self.output_dir)
             self.output_dir.mkdir(parents=True)
-            print(f"Season outputs will be saved to: {self.output_dir}")
+            if not self.silent:
+                print(f"Season outputs will be saved to: {self.output_dir}")
 
         self.last_model_run = None
         self._next_day_ix = 0
@@ -57,17 +60,25 @@ class SeasonOrchestrator:
         self.season_person_log_rows = []  # list of dicts; snapshot per person per day
         self.sp_day_summaries = []        # list of per-day SP summaries
 
+        self._total_steps = 0
+        self._total_vehicle_steps = 0
+        self._wall_time = 0.0
+        self.season_summary = None  # populated by run_season()
+
     def run_season(self):
         """Run all days in the season config, in order."""
-        # could also just: for _ in self.config.day_params: self.run_day()
+        import time
+        t0 = time.perf_counter()
+
         for day_cfg in self.config.day_params:
             self.run_day(day_cfg)
 
-        season_summary = self._compute_season_summary()
+        self._wall_time = time.perf_counter() - t0
+        self.season_summary = self._compute_season_summary()
 
         if self.store_data:
             self._save_config()
-            self._save_season_summary(season_summary)
+            self._save_season_summary(self.season_summary)
 
             self._save_df_if_exists(self.get_trip_log_df(), "trip_log.parquet")
             self._save_df_if_exists(self.get_day_summary_df(), "day_summary.parquet")
@@ -101,8 +112,11 @@ class SeasonOrchestrator:
         tm = self._build_model(day_cfg=day_cfg)
         tm.run_model()
         self.last_model_run = tm
+        self._total_steps += tm.steps
+        self._total_vehicle_steps += tm.total_vehicle_steps
 
-        print(dict(tm.created_counts)) # temp
+        if not self.silent:
+            print(dict(tm.created_counts)) # temp
 
 
         self._append_day_trip_log(day_index)
@@ -129,12 +143,11 @@ class SeasonOrchestrator:
             ecs_df=self.ecs_df,
 
             # season level parameters from config
-            batchrun=self.config.batch_run,
             max_steps=self.config.max_steps,
             max_persons=self.config.max_persons,
+            max_concurrent_vehicles=self.config.max_concurrent_vehicles,
             start_hr=self.config.start_hr,
             bus_capacity=self.config.bus_capacity,
-            collect_every_n=self.config.collect_every_n,
             toll_config=self.config.toll_config,
             bus_user_fee=self.config.bus_user_fee,
 
@@ -152,6 +165,7 @@ class SeasonOrchestrator:
             p_generate=None,
             car_preference=1,
             hybrid_collector_config=self.config.hybrid_collector_config,
+            silent=self.silent,
         )
 #-----------------------------------------------------------------------------  
 # ------------------------- Compute logs + summaries -------------------------
@@ -314,21 +328,22 @@ class SeasonOrchestrator:
         summary = {"day_index": day_index, **metrics}
         self.day_summaries.append(summary)
 
-        bus_cost_str = f", bus_cost_daily:${summary['bus_cost_daily']:,.0f}" if "bus_cost_daily" in summary else ""
-        print(
-            f"Day:{day_index}: "
-            f"N:{summary['total_persons']}, "
-            f"Avg TT:{summary['avg_tt']:.1f} min, "
-            f"Avg CumTimeLost:{summary['avg_cum_time_lost']:.1f} min, "
-            f"VOT Std Cost:${summary['avg_cost_vot_standardized']:.1f}, "
-            f"Realized Cost:${summary['avg_realized_cost']:.1f}, "
-            f"bus_share:{summary['share_bus']:.2f}, "
-            f"avg_tt_bus:{summary['avg_tt_bus']:.1f} min, "
-            f"avg_tt_car:{summary['avg_tt_car']:.1f} min, "
-            f"avg_toll_car:${summary['avg_toll_car']:.2f}, "
-            f"total_toll_car:${summary['total_toll_car']:.2f}"
-            f"{bus_cost_str}"
-        )
+        if not self.silent:
+            bus_cost_str = f", bus_cost_daily:${summary['bus_cost_daily']:,.0f}" if "bus_cost_daily" in summary else ""
+            print(
+                f"Day:{day_index}: "
+                f"N:{summary['total_persons']}, "
+                f"Avg TT:{summary['avg_tt']:.1f} min, "
+                f"Avg CumTimeLost:{summary['avg_cum_time_lost']:.1f} min, "
+                f"VOT Std Cost:${summary['avg_cost_vot_standardized']:.1f}, "
+                f"Realized Cost:${summary['avg_realized_cost']:.1f}, "
+                f"bus_share:{summary['share_bus']:.2f}, "
+                f"avg_tt_bus:{summary['avg_tt_bus']:.1f} min, "
+                f"avg_tt_car:{summary['avg_tt_car']:.1f} min, "
+                f"avg_toll_car:${summary['avg_toll_car']:.2f}, "
+                f"total_toll_car:${summary['total_toll_car']:.2f}"
+                f"{bus_cost_str}"
+            )
         return summary
 
     def compute_sp_day_summary(self, day_index):
@@ -394,32 +409,39 @@ class SeasonOrchestrator:
                 metrics["bus_cost_avg_daily"] = round(avg_daily, 2)
                 metrics["bus_cost_annual"] = round(avg_daily * bc_config.service_days_per_year, 2)
 
+        wt = max(self._wall_time, 0.001)
         summary = {
             "season_id": self.config.season_id,
             "days_run": df["day_index"].nunique(),
+            "wall_time_seconds": round(self._wall_time, 2),
+            "total_steps": self._total_steps,
+            "total_vehicle_steps": self._total_vehicle_steps,
+            "avg_steps_per_second": round(self._total_steps / wt, 1),
+            "avg_vehicle_steps_per_second": round(self._total_vehicle_steps / wt, 1),
             **metrics,
         }
 
-        bus_cost_str = ""
-        if "bus_cost_season_total" in summary:
-            bus_cost_str = (
-                f"\n  Bus cost (sim period): ${summary['bus_cost_season_total']:,.0f}, "
-                f"Bus cost (annual est): ${summary.get('bus_cost_annual', 0):,.0f}"
-            )
+        if not self.silent:
+            bus_cost_str = ""
+            if "bus_cost_season_total" in summary:
+                bus_cost_str = (
+                    f"\n  Bus cost (sim period): ${summary['bus_cost_season_total']:,.0f}, "
+                    f"Bus cost (annual est): ${summary.get('bus_cost_annual', 0):,.0f}"
+                )
 
-        print(
-            f"Season Summary - {summary['season_id']}\n"
-            f"  Days: {summary['days_run']}, Trips: {summary['total_trips']} "
-            f"(car: {summary['car_trips']}, bus: {summary['bus_trips']})\n"
-            f"  Avg TT: {summary['avg_tt']:.1f} min, "
-            f"CumTimeLost: {summary['avg_cum_time_lost']:.1f} min\n"
-            f"  VOT Std Cost: ${summary['avg_cost_vot_standardized']:.1f}, "
-            f"Realized Cost: ${summary['avg_realized_cost']:.1f}\n"
-            f"  Bus share: {summary['share_bus']:.2f}, "
-            f"Avg toll car: ${summary['avg_toll_car']:.2f}, "
-            f"Total rev: ${summary['total_rev']:.2f}"
-            f"{bus_cost_str}"
-        )
+            print(
+                f"Season Summary - {summary['season_id']}\n"
+                f"  Days: {summary['days_run']}, Trips: {summary['total_trips']} "
+                f"(car: {summary['car_trips']}, bus: {summary['bus_trips']})\n"
+                f"  Avg TT: {summary['avg_tt']:.1f} min, "
+                f"CumTimeLost: {summary['avg_cum_time_lost']:.1f} min\n"
+                f"  VOT Std Cost: ${summary['avg_cost_vot_standardized']:.1f}, "
+                f"Realized Cost: ${summary['avg_realized_cost']:.1f}\n"
+                f"  Bus share: {summary['share_bus']:.2f}, "
+                f"Avg toll car: ${summary['avg_toll_car']:.2f}, "
+                f"Total rev: ${summary['total_rev']:.2f}"
+                f"{bus_cost_str}"
+            )
 
         return summary
 

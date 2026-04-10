@@ -31,7 +31,7 @@ def get_collector_config(size: str):
         pre / medium : None (use TrafficModel default)
         small        : tier1 only, every 10 steps, minimal scalars
         large        : all tiers enabled, every step
-        matched      : replicates old reporting.py (collect_every_n=100, batch_run=True)
+        matched      : replicates old reporting.py (tier1 every 100 steps, tier2 disabled)
         lean         : leaner than old system (every 300 steps, 3 scalars)
     """
     from traffic.model.hybrid_collector import HybridCollectorConfig
@@ -39,7 +39,7 @@ def get_collector_config(size: str):
     if size == "small":
         return HybridCollectorConfig(
             tier1_interval=10,
-            tier1_scalars=["step", "vehicle_count", "total_finished"],
+            tier1_scalars=["step", "vehicle_count", "persons_finished"],
             tier1_histograms=[],
             tier2_enabled=False,
             tier3_enabled=False,
@@ -57,14 +57,14 @@ def get_collector_config(size: str):
             tier4_snapshot_on_crash=True,
         )
     elif size == "matched":
-        # Replicates old reporting.py + Mesa DataCollector with collect_every_n=100, batch_run=True.
+        # Replicates old reporting.py + Mesa DataCollector at tier1_interval=100.
         # Old model reporters: Step, current_toll_car, volume, at_bus_stop, bus_mode_share_recent.
         # (avg_posted_sl_delta and bus_user_fee have no tier1 equivalent)
         return HybridCollectorConfig(
             tier1_interval=100,
             tier1_scalars=[
                 "step", "current_toll", "vehicle_count",
-                "bus_riders_waiting", "bus_mode_share_recent",
+                "persons_at_bus_stop", "bus_mode_share_recent",
             ],
             tier1_histograms=[],
             tier2_enabled=False,
@@ -75,7 +75,7 @@ def get_collector_config(size: str):
         # Leaner than old system: larger interval, minimal scalars for batch analysis.
         return HybridCollectorConfig(
             tier1_interval=300,
-            tier1_scalars=["step", "vehicle_count", "total_finished"],
+            tier1_scalars=["step", "vehicle_count", "persons_finished"],
             tier1_histograms=[],
             tier2_enabled=False,
             tier3_enabled=False,
@@ -96,8 +96,6 @@ def get_congestion_config(seed: int = DEFAULT_SEED):
         n_days=2,
         max_persons=3000,
         max_steps=50000,
-        collect_every_n=100,
-        batch_run=True,
         road_path="data/roads/hw210_sl_and_curvs.parquet",
         ecs_path="data/vehicle_counts/expected_counts_seconds.csv",
         traffic_percentile_schedule=ScheduleSpecs("static", 90),
@@ -116,8 +114,6 @@ def get_free_flow_config(seed: int = DEFAULT_SEED):
         n_days=2,
         max_persons=3000,
         max_steps=50000,
-        collect_every_n=100,
-        batch_run=True,
         road_path="data/roads/hw210_sl_and_curvs.parquet",
         ecs_path="data/vehicle_counts/expected_counts_seconds.csv",
         traffic_percentile_schedule=ScheduleSpecs("static", 50),

@@ -161,8 +161,10 @@ def plot_model_ts_interactive(model_ts, run_id: str, output_root: str = "data/se
         "current_toll",
         "active_cars",
         "active_buses",
-        "bus_riders_waiting",
-        "total_finished",
+        "persons_at_bus_stop",
+        "persons_finished",
+        "persons_pool_remaining",
+        "persons_in_transit",
         "recent_travel_time_avg",
         "p_generate",
         "rolling_count_vehicles_generated",
@@ -227,6 +229,122 @@ def plot_model_ts_interactive(model_ts, run_id: str, output_root: str = "data/se
                 y=1,
                 yanchor="top",
                 showactive=True,
+            )
+        ],
+    )
+
+    fig.show()
+
+
+def plot_single_day_metrics(
+    model_ts,
+    run_id: str,
+    output_root: str = "data/season_outputs",
+    default_metrics: list[str] | None = None,
+):
+    """Plot multiple metrics for a single day, with a slider to select the day."""
+    start_hr = _load_start_hr(run_id, output_root)
+
+    if default_metrics is None:
+        default_metrics = ["vehicle_count", "recent_travel_time_avg"]
+
+    dfs = []
+    for day, df in model_ts.items():
+        tmp = df.copy()
+        tmp["day_index"] = day
+        dfs.append(tmp)
+    data = pd.concat(dfs, ignore_index=True)
+    data["hour_of_day"] = start_hr + data["step"] / 3600.0
+
+    all_metrics = [
+        "vehicle_count",
+        "current_toll",
+        "active_cars",
+        "active_buses",
+        "persons_at_bus_stop",
+        "persons_finished",
+        "persons_pool_remaining",
+        "persons_in_transit",
+        "recent_travel_time_avg",
+        "p_generate",
+        "rolling_count_vehicles_generated",
+        "rolling_count_persons_generated",
+    ]
+    all_metrics = [m for m in all_metrics if m in data.columns]
+    days = sorted(data["day_index"].unique())
+
+    h_min = data["hour_of_day"].min()
+    h_max = data["hour_of_day"].max()
+    tick_vals = list(range(int(h_min), int(h_max) + 2))
+    tick_text = [_fmt_hour(h) for h in tick_vals]
+
+    # colour palette for metrics
+    palette = [
+        "#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd",
+        "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf",
+    ]
+
+    fig = go.Figure()
+
+    # Add one trace per (metric, day). Only the first day's traces are visible.
+    first_day = days[0]
+    for m_idx, metric in enumerate(all_metrics):
+        color = palette[m_idx % len(palette)]
+        visible_by_default = metric in default_metrics
+        for day in days:
+            sub = data[data["day_index"] == day]
+            fig.add_trace(
+                go.Scatter(
+                    x=sub["hour_of_day"],
+                    y=sub[metric],
+                    mode="lines",
+                    name=metric,
+                    line=dict(color=color),
+                    visible=visible_by_default if day == first_day else False,
+                    legendgroup=metric,
+                    showlegend=(day == first_day),
+                )
+            )
+
+    n_metrics = len(all_metrics)
+    n_days = len(days)
+    # total traces = n_metrics * n_days
+    # trace index for metric m_idx, day d_idx = m_idx * n_days + d_idx
+
+    # Build slider steps — each step shows traces for one day
+    steps = []
+    for d_idx, day in enumerate(days):
+        visibility = []
+        for m_idx, metric in enumerate(all_metrics):
+            for dd_idx in range(n_days):
+                if dd_idx == d_idx:
+                    # Use "legendonly" for non-default metrics so they appear
+                    # togglable in the legend but aren't drawn initially
+                    if metric in default_metrics:
+                        visibility.append(True)
+                    else:
+                        visibility.append("legendonly")
+                else:
+                    visibility.append(False)
+        steps.append(
+            dict(
+                method="restyle",
+                args=[{"visible": visibility}],
+                label=str(day),
+            )
+        )
+
+    fig.update_layout(
+        title=f"Day {first_day} — model time series",
+        xaxis=dict(title="Time of day", tickvals=tick_vals, ticktext=tick_text),
+        yaxis_title="Value",
+        legend_title_text="Metric (click to toggle)",
+        sliders=[
+            dict(
+                active=0,
+                currentvalue=dict(prefix="Day: "),
+                pad=dict(t=60),
+                steps=steps,
             )
         ],
     )

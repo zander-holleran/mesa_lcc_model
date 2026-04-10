@@ -41,8 +41,6 @@ def run_day_determinism_test(seed: int = 12345, verbose: bool = True) -> bool:
         n_days=1,
         max_persons=1000,
         max_steps=50000,
-        collect_every_n=10,
-        batch_run=True,
         road_path="data/roads/hw210_sl_and_curvs.parquet",
         ecs_path="data/vehicle_counts/expected_counts_seconds.csv",
         traffic_percentile_schedule=ScheduleSpecs("static", 50),
