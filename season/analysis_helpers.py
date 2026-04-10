@@ -1,16 +1,30 @@
 import json
 from pathlib import Path
 
+import geopandas as gpd
 import matplotlib.pyplot as plt
 import pandas as pd
 import plotly.graph_objects as go
 import seaborn as sns
+from IPython.display import display
 
 import re
 import numpy as np
+from pprint import pprint
 
 #============================================ LOAD DATA ============================================
 BASE_DIR = Path('data/season_outputs')
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+RUN_DATA_ITEM_TITLES = {
+    'season_summary': 'Season Summary - one row per SEASON, with aggregate metrics',
+    'day_summary': 'Day Summary - one row per DAY, with aggregate metrics',
+    'trip_log': 'Trip Log - one row per TRIP, with trip-level outcomes',
+    'season_person_log': 'Season Person Log - one row per PERSON, with season-level outcomes',
+    'sp_day_summary': 'SP Day Summary - one row per DAY, with social planner metrics',
+    'model_ts': 'Model Time Series - one dataframe per DAY, with collected Tier 1 metrics',
+    'spatial': 'Spatial Data - one dataframe per DAY, with collected spatial metrics',
+    'road_gdf': 'Road GeoDataFrame - road geometry and segment attributes for the run',
+}
  # e.g., 'my_season_id'
 
 def list_runs(base_dir: Path = BASE_DIR):
@@ -36,7 +50,32 @@ def load_model_ts(run_dir: Path):
         model_ts[day_idx] = pd.read_parquet(p)
     return model_ts
 
-def load_run(run_id: str, base_dir: Path = BASE_DIR):
+def load_spatial(run_dir: Path):
+    spatial = {}
+    if not run_dir.exists():
+        return spatial
+    pattern = re.compile(r'^day_(\d+)_spatial\.parquet$')
+    for p in sorted(run_dir.glob('day_*_spatial.parquet')):
+        m = pattern.match(p.name)
+        if not m:
+            continue
+        day_idx = int(m.group(1))
+        spatial[day_idx] = pd.read_parquet(p)
+    return spatial
+
+def load_road_gdf(run_dir: Path):
+    config_path = run_dir / 'season_config.json'
+    if not config_path.exists():
+        return None
+
+    cfg = json.loads(config_path.read_text())
+    road_path = cfg.get('road_path')
+    if not road_path:
+        return None
+
+    return gpd.read_parquet(PROJECT_ROOT / road_path)
+
+def load_run(run_id: str, base_dir: Path = BASE_DIR, verbose: bool = True):
     run_dir = base_dir / run_id
 
     data = {
@@ -46,9 +85,67 @@ def load_run(run_id: str, base_dir: Path = BASE_DIR):
         'season_person_log': _read_parquet_optional(run_dir / 'season_person_log.parquet'),
         'sp_day_summary': _read_parquet_optional(run_dir / 'sp_day_summary.parquet'),
         'model_ts': load_model_ts(run_dir),
+        'spatial': load_spatial(run_dir),
+        'road_gdf': load_road_gdf(run_dir),
         'season_summary': _read_parquet_optional(run_dir / 'season_summary.parquet'),
     }
+
+    if verbose:
+        run_data_keys = {
+            k: (
+                list(v.keys()) if k in {'model_ts', 'spatial'}
+                else (None if v is None else getattr(v, 'shape', None))
+            )
+            for k, v in data.items()
+        }
+        pprint(run_data_keys)
+
     return data
+
+
+def load_run_data_item(run_data: dict, key: str, day_index: int | None = None):
+    print('=' * 100)
+
+    if key not in run_data:
+        print(f'No data found for key: {key}')
+        print('=' * 100)
+        return None
+
+    value = run_data[key]
+    print(RUN_DATA_ITEM_TITLES.get(key, f'{key} data'))
+
+    if isinstance(value, dict):
+        if day_index is None:
+            print('Returning all days')
+            print('=' * 100)
+            if not value:
+                print(f'No {key} data')
+                return value
+
+            first_day = sorted(value)[0]
+            print(f'Displaying head for day {first_day}')
+            display(value[first_day].head(3))
+            return value
+
+        print(f'Returning day {day_index}')
+        print('=' * 100)
+        day_value = value.get(day_index)
+        if day_value is None:
+            print(f'No {key} data for day {day_index}')
+            return None
+        display(day_value.head(3))
+        return day_value
+
+    print('=' * 100)
+    if value is None:
+        print(f'No {key} data')
+        return None
+
+    if hasattr(value, 'head'):
+        display(value.head(3))
+    else:
+        display(value)
+    return value
 
 
 # #============================================ PLOTTING FUNCTIONS #============================================
