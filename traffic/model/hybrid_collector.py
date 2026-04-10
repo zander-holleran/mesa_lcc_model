@@ -142,7 +142,7 @@ TIER1_SCALARS: Dict[str, Dict[str, Any]] = {
     },
     'persons_finished': {
         'dtype': np.int32,
-        'fn': lambda m: len(m.finished_agents),
+        'fn': lambda m: m.sp_finished_counter,
     },
     'persons_pool_remaining': {
         'dtype': np.int16,

@@ -114,6 +114,7 @@ class TrafficModel(Model):
         self.bus_riders = 0 
         self.at_bus_stop = []
         self.finished_agents = []
+        self.sp_finished_counter = 0
         self.total_vehicle_steps = 0
 
         # ===== Set up ContinuousSpace =====

@@ -114,8 +114,10 @@ class TrafficPersonAgent(Agent):
                 wait_time=wait_time,
                 onboard_time=onboard_time,
                 cumtime_lost_min=cumtime_lost_min,
-                realized_cost=realized_cost
+                realized_cost=realized_cost,
+                vehicle_id=self.vehicle.unique_id if self.vehicle else None,
             )
+            self.model.sp_finished_counter += 1
                 
         self.status = "arrived"
 

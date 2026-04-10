@@ -5,6 +5,8 @@ from matplotlib.patches import Rectangle
 from matplotlib.animation import FuncAnimation
 from IPython.display import HTML
 from shapely.geometry import LineString
+from scipy.stats import gaussian_kde
+from traffic.utils import unit_conversion_utils as uc
 # -~-~-~-~-~-~-~-~-~-~-~-~ animations -~-~-~-~-~-~-~-~-~-~-~-~
 def make_scale_legend(ax, wx, wy):
     #half baked make scale function 
@@ -251,6 +253,124 @@ def animate_relative_distance(vehicle_df, agent_id, distance_behind, color_by='d
     plt.close()
     return HTML(anim.to_jshtml())
 
+
+def animate_road_density(
+    spatial_df,
+    road_gdf,
+    interval=100,
+    step_skip=1,
+    bandwidth=0.3,
+    curve_resp=0.5,
+):
+    """
+    Animate vehicle density along the 1D road axis using KDE.
+
+    Parameters:
+    - spatial_df: Tier 2 HybridCollector to_dataframe() output — requires
+                  columns ['Step', 'distance_traveled', 'status']
+    - road_gdf: GeoDataFrame with columns ['distance_traveled', 'speed_limit', 'curvature']
+    - interval: ms between animation frames
+    - step_skip: sample every Nth step
+    - bandwidth: KDE smoothing bandwidth in miles
+    - curve_resp: driver curve response factor (0–1) for curve-adjusted speed limit strip
+
+    Returns:
+    - HTML animation object
+    """
+    # --- 1. Data prep ---
+    df = spatial_df[
+        (spatial_df['distance_traveled'] >= 0) &
+        (spatial_df['status'] != 'arrived')
+    ].copy()
+    df['dist_mi'] = uc.meters_to_miles(df['distance_traveled'])
+
+    steps = sorted(df['Step'].unique())[::step_skip]
+
+    road_dist_mi = uc.meters_to_miles(road_gdf['distance_traveled'].values)
+    x_min, x_max = road_dist_mi.min(), road_dist_mi.max()
+    x_grid = np.linspace(x_min, x_max, 500)
+
+    # --- 2. Pre-compute y-axis max over a sample of steps ---
+    sample_steps = steps[::max(1, len(steps) // 50)]
+    y_max = 0.0
+    for s in sample_steps:
+        pts = df.loc[df['Step'] == s, 'dist_mi'].values
+        if len(pts) < 2:
+            continue
+        kde = gaussian_kde(pts, bw_method=bandwidth)
+        density = kde(x_grid) * len(pts)
+        y_max = max(y_max, density.max())
+    y_max = y_max * 1.1 if y_max > 0 else 10.0
+
+    # --- 3. Curve-adjusted speed limit for road strip (mirrors vehicle_kernel.py:117-122) ---
+    sl = road_gdf['speed_limit'].values.astype(float)
+    curv = road_gdf['curvature'].values.astype(float)
+    curve_effect = np.clip(curv / 90.0, 0.0, 1.0)
+    speed_effect = np.clip((sl - 10.0) / (60.0 - 10.0), 0.0, 1.0)
+    speed_effect[sl <= 15.0] = 0.0
+    curve_sl = sl * (1.0 - curve_resp * curve_effect * speed_effect)
+
+    # --- 4. Figure layout ---
+    fig, (ax_density, ax_speed) = plt.subplots(
+        2, 1, figsize=(14, 5),
+        gridspec_kw={'height_ratios': [5, 1]},
+        sharex=True
+    )
+    fig.subplots_adjust(hspace=0.05)
+
+    line, = ax_density.plot([], [], lw=2, color='steelblue')
+    ax_density.set_xlim(x_min, x_max)
+    ax_density.set_ylim(0, y_max)
+    ax_density.set_ylabel("Density (veh/mi)")
+    ax_density.set_xticks(np.arange(np.ceil(x_min), np.floor(x_max) + 1, 1.0))
+    ax_density.grid(axis='x', linestyle='--', alpha=0.3)
+
+    fill_container = [None]
+
+    # --- 5. Speed limit strip (static, drawn once) ---
+    x_edges = np.concatenate([road_dist_mi, [road_dist_mi[-1] + (road_dist_mi[-1] - road_dist_mi[-2])]])
+    y_edges = np.array([0.0, 1.0])
+    mesh = ax_speed.pcolormesh(
+        x_edges, y_edges, curve_sl[np.newaxis, :],
+        cmap='gray_r',
+        vmin=sl.min(),
+        vmax=sl.max(),
+        shading='flat',
+    )
+    ax_speed.set_yticks([])
+    ax_speed.set_xlabel("Distance (miles)")
+    ax_speed.set_xlim(x_min, x_max)
+    cbar = fig.colorbar(mesh, ax=ax_speed, orientation='vertical', pad=0.01, fraction=0.02)
+    cbar.set_label("Curve-adj SL (mph)", fontsize=7)
+    cbar.ax.tick_params(labelsize=7)
+
+    # --- 6. Animation ---
+    def init():
+        line.set_data([], [])
+        return line,
+
+    def update(frame):
+        pts = df.loc[df['Step'] == frame, 'dist_mi'].values
+        n = len(pts)
+        ax_density.set_title(f"Step {frame} — {n} vehicles", fontsize=12)
+
+        if fill_container[0] is not None:
+            fill_container[0].remove()
+            fill_container[0] = None
+
+        if n < 2:
+            line.set_data([], [])
+            return line,
+
+        kde = gaussian_kde(pts, bw_method=bandwidth)
+        density = kde(x_grid) * n
+        line.set_data(x_grid, density)
+        fill_container[0] = ax_density.fill_between(x_grid, density, alpha=0.2, color='steelblue')
+        return line,
+
+    anim = FuncAnimation(fig, update, frames=steps, init_func=init, blit=False, interval=interval)
+    plt.close()
+    return HTML(anim.to_jshtml())
 
 
 def animate_traffic_with_speed_delta_highlight(vehicles_full, road_gdf, model_ts, interval=60, step_skip=1, watch=None, zoom=1, highlight_width=100):
