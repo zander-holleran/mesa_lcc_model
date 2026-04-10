@@ -209,6 +209,9 @@ def step(model) -> list:
             break_cd[slot_i] = 5
             action[slot_i] = ACTION_PREVENT_PASS
 
+    # Restore pre-refactor speed floor: vehicles must never move backward
+    speed = np.maximum(speed, 0.0)
+
     # Write speed/cooldown/action back to store
     vs.speed[:n]          = speed
     vs.break_cd[:n]       = break_cd
