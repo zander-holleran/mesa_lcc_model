@@ -90,6 +90,9 @@ def load_run(run_id: str, base_dir: Path = BASE_DIR, verbose: bool = True):
         'season_summary': _read_parquet_optional(run_dir / 'season_summary.parquet'),
     }
 
+    if data['spatial'] and data['trip_log'] is not None:
+        data['spatial'] = merge_season_person_ids(data['spatial'], data['trip_log'])
+
     if verbose:
         run_data_keys = {
             k: (
@@ -101,6 +104,37 @@ def load_run(run_id: str, base_dir: Path = BASE_DIR, verbose: bool = True):
         pprint(run_data_keys)
 
     return data
+
+
+def merge_season_person_ids(spatial_df_dict: dict, trip_log: pd.DataFrame) -> dict:
+    """Merge season_person_id from trip_log into each spatial DataFrame.
+
+    Args:
+        spatial_df_dict: dict {day_index: DataFrame} (e.g. run_data['spatial']).
+        trip_log: DataFrame with columns vehicle_id, season_person_id, day_index.
+
+    Returns:
+        New dict {day_index: DataFrame} with season_person_id column added (left join;
+        NaN for bus agents or rows with no matching trip record).
+    """
+    id_map = (
+        trip_log[['day_index', 'vehicle_id', 'season_person_id']]
+        .dropna(subset=['vehicle_id'])
+        .drop_duplicates(subset=['day_index', 'vehicle_id'])
+        .astype({'vehicle_id': int})
+    )
+
+    result = {}
+    for day_index, spatial_df in spatial_df_dict.items():
+        day_map = (
+            id_map[id_map['day_index'] == day_index][['vehicle_id', 'season_person_id']]
+            .rename(columns={'vehicle_id': 'AgentID'})
+        )
+        merged = spatial_df.merge(day_map, on='AgentID', how='left')
+        merged['has_person'] = merged['season_person_id'].notna()
+        result[day_index] = merged
+
+    return result
 
 
 def load_run_data_item(run_data: dict, key: str, day_index: int | None = None):
