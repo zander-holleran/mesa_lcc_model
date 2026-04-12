@@ -108,6 +108,7 @@ class TrafficModel(Model):
         self._p_generate_frozen = False
         self._exception_car_fraction = None
         self.too_close_counter = 0
+        self.start_point_cumulative_shift = 0.0
         self.person_counter = 0 
         self.bus_counter = 0 
         self.car_counter = 0 

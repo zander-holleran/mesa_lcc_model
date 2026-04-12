@@ -2,7 +2,7 @@
 
 When vehicles spawn in rapid succession, they can end up at the same position on the road. This causes deadlock in the gap computation (which relies on sorted distance rankings). The **close-spawn handler** detects this and shifts the spawn point to create separation.
 
-**Source:** `traffic/model/generate.py` -- `too_close()` (lines 4--18), `_spawn_offset()` (lines 20--29)
+**Source:** `traffic/model/generate.py` -- `too_close()` (lines 4--17), `_spawn_offset()` (lines 19--28)
 
 **Related:** [Vehicle Physics](vehicle-physics.md) | [Gap Braking](gap-braking.md)
 
@@ -22,21 +22,31 @@ If two vehicles share `dist = 0`, gap is zero, both gap-brake to a stop, and nei
 
 ## Detection: `too_close()`
 
-After each vehicle spawn, `too_close()` checks the most recently spawned vehicle:
+After each vehicle spawn, `too_close()` checks the distance of all active vehicles relative to the spawn point, measured along the road (1D distance):
 
 ```python
 def too_close(model):
-    v = model.vehicles_list[-1]
-    vx, vy = vs.pos_x[slot], vs.pos_y[slot]
-    sx, sy = model.start_point
-    dist = sqrt((vx - sx)² + (vy - sy)²)
-
-    if dist < 1:  # meters
-        model.start_point = (sx, sy + 1)  # shift north by 1m
+    vs = model.vs
+    n = vs.n_active
+    if n == 0:
+        return
+    spawn_dist = _spawn_offset(model)
+    closeness_threshold = 1
+    min_gap = float((vs.dist[:n] - spawn_dist).min())
+    while min_gap < closeness_threshold:
+        model.start_point = (model.start_point[0], model.start_point[1] + 1)
         model.too_close_counter += 1
+        model.start_point_cumulative_shift += 1.0
+        spawn_dist = _spawn_offset(model)
+        min_gap = float((vs.dist[:n] - spawn_dist).min())
 ```
 
-The threshold is **1 meter** -- if the last vehicle is within 1m of the spawn point, the spawn point shifts.
+The key changes from the previous implementation:
+- **1D road distance** instead of 2D Euclidean: compares `vs.dist[:n]` (vehicle distances in road-meters) against `spawn_dist` from `_spawn_offset()`. This is immune to geometric drift that occurred when spawn point shifted in pure +Y direction while vehicles progressed along the road's direction vector.
+- **Checks all active vehicles**, not just the most recent one -- catches any stuck vehicle near the spawn point.
+- **While-loop** -- keeps shifting `start_point` (by +1m in Y per iteration) until 1m of clear road exists ahead of the spawn point. A single call to `too_close()` can shift multiple meters if needed.
+
+The threshold is **1 meter** of clear road ahead of the spawn point.
 
 ---
 
@@ -73,9 +83,27 @@ This preserves correct ordering in the gap computation: vehicles further behind 
 
 ---
 
+## Why 1D Road Distance? The Geometric Drift Bug
+
+The old implementation compared 2D Euclidean distance between a vehicle's kernel-computed `(pos_x, pos_y)` and `model.start_point`. This caused a subtle but fatal geometric bug:
+
+- `start_point` shifts in pure +Y direction (north)
+- Vehicle positions progress along the road's direction vector at segment 0: approximately `(0.081, -0.997)` — nearly due south
+
+Each time `too_close()` fired, the vehicle's position drifted ~0.081m in +X while the spawn point stayed at the same X. After 13 too_close events (13 × 0.081 = 1.054m > 1.0m threshold), the Euclidean distance permanently exceeded the threshold. `too_close()` stopped firing, and all subsequent vehicles spawned at `dist = -13`, piling up on previously stuck vehicles.
+
+The fix: use **1D road distance** (`vs.dist` in road-meters), which is invariant to the road's direction vector. A shift in `start_point` always produces a corresponding shift in `spawn_offset`, eliminating geometric drift.
+
+---
+
 ## Tracking
 
-`model.too_close_counter` records how many times the start point was shifted during the simulation. High values indicate heavy traffic at the spawn point -- useful for diagnosing congestion near the canyon entrance.
+Two metrics track spawn point shifting:
+
+- **`model.too_close_counter`** — incremented once per +1m shift iteration. If `too_close()` is called and the while-loop shifts 3 times, this increments by 3.
+- **`model.start_point_cumulative_shift`** — total meters the start point has shifted (also incremented by 1.0 per iteration, same as `too_close_counter`). Provided as a semantic alternative to emphasize the physical shift in meters.
+
+High values indicate heavy traffic at the spawn point -- useful for diagnosing congestion near the canyon entrance.
 
 ---
 

@@ -109,6 +109,10 @@ def load_run(run_id: str, base_dir: Path = BASE_DIR, verbose: bool = True):
 def merge_season_person_ids(spatial_df_dict: dict, trip_log: pd.DataFrame) -> dict:
     """Merge season_person_id from trip_log into each spatial DataFrame.
 
+    Note: trip_log only contains entries for vehicles that reached end_of_road().
+    Vehicles that got stuck and never completed their trip will have no trip_log
+    entry, so they will appear as has_person=False even if they carried a person.
+
     Args:
         spatial_df_dict: dict {day_index: DataFrame} (e.g. run_data['spatial']).
         trip_log: DataFrame with columns vehicle_id, season_person_id, day_index.
@@ -287,21 +291,8 @@ def plot_model_ts_interactive(model_ts, run_id: str, output_root: str = "data/se
 
     data["hour_of_day"] = start_hr + data["step"] / 3600.0
 
-    metrics = [
-        "vehicle_count",
-        "current_toll",
-        "active_cars",
-        "active_buses",
-        "persons_at_bus_stop",
-        "persons_finished",
-        "persons_pool_remaining",
-        "persons_in_transit",
-        "recent_travel_time_avg",
-        "p_generate",
-        "rolling_count_vehicles_generated",
-        "rolling_count_persons_generated",
-    ]
-    metrics = [m for m in metrics if m in data.columns]
+    exclude = {"step", "hour_of_day", "day_index"}
+    metrics = [c for c in data.columns if c not in exclude and pd.api.types.is_numeric_dtype(data[c])]
     start_metric = "vehicle_count"
     days = sorted(data["day_index"].unique())
     n_days = len(days)
@@ -328,6 +319,8 @@ def plot_model_ts_interactive(model_ts, run_id: str, output_root: str = "data/se
                 mode="lines",
                 name=f"Day {day}",
                 line=dict(color=colors[i]),
+                customdata=sub[["step"]].values,
+                hovertemplate="<b>%{fullData.name}</b><br>Time: %{x:.2f}h<br>Value: %{y}<br>Step: %{customdata[0]}<extra></extra>",
             )
         )
 
@@ -343,7 +336,9 @@ def plot_model_ts_interactive(model_ts, run_id: str, output_root: str = "data/se
         )
 
     fig.update_layout(
-        title="Model time series by day",
+        title=dict(text="Model time series by day", y=0.97, yanchor="top"),
+        width=1000,
+        margin=dict(t=100),
         xaxis=dict(
             title="Time of day",
             tickvals=tick_vals,
@@ -355,9 +350,10 @@ def plot_model_ts_interactive(model_ts, run_id: str, output_root: str = "data/se
             dict(
                 buttons=buttons,
                 direction="down",
-                x=1.05,
+                type="dropdown",
+                x=0.0,
                 xanchor="left",
-                y=1,
+                y=1.12,
                 yanchor="top",
                 showactive=True,
             )

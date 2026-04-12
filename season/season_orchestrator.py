@@ -8,6 +8,7 @@ import shutil
 from typing import Any, Dict, Iterable, List, Optional, Protocol
 
 import json
+import subprocess
 import geopandas as gpd
 import numpy as np
 import pandas as pd
@@ -19,6 +20,17 @@ from traffic.model.traffic_model import TrafficModel
 from traffic.utils import analysis_utils as au
 
 from season.configs import SeasonConfig
+
+
+def _get_git_commit_short() -> str:
+    """Return the short git commit hash, or 'unknown' on failure."""
+    try:
+        return subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            capture_output=True, text=True,
+        ).stdout.strip() or "unknown"
+    except Exception:
+        return "unknown"
 
 
 
@@ -93,6 +105,8 @@ class SeasonOrchestrator:
         - If day_cfg is provided: use that.
         - If day_cfg is None: run the next day in config.day_params.
         """
+        import time
+
         if day_cfg is None:
             if self._next_day_ix >= len(self.config.day_params):
                 print("All days in season_config have already been run.")
@@ -110,10 +124,16 @@ class SeasonOrchestrator:
 
         # 2) build and run traffic model
         tm = self._build_model(day_cfg=day_cfg)
+        t0 = time.perf_counter()
         tm.run_model()
+        day_wall_time = time.perf_counter() - t0
+
         self.last_model_run = tm
         self._total_steps += tm.steps
         self._total_vehicle_steps += tm.total_vehicle_steps
+        self._day_wall_time = day_wall_time
+        self._day_steps = tm.steps
+        self._day_vehicle_steps = tm.total_vehicle_steps
 
         if not self.silent:
             print(dict(tm.created_counts)) # temp
@@ -256,7 +276,7 @@ class SeasonOrchestrator:
         vot_std_bus = (bus_df["realized_tt"] * median_vot + bus_df["toll_paid"]).mean() if has_bus else nan
         vot_std_car = (car_df["realized_tt"] * median_vot + car_df["toll_paid"]).mean() if has_car else nan
 
-        return {
+        result = {
             # overall
             "total_persons": df["season_person_id"].nunique(),
             "total_trips": n,
@@ -288,6 +308,10 @@ class SeasonOrchestrator:
             "avg_realized_cost": df["realized_cost"].mean(),
             "avg_realized_cost_bus": bus_df["realized_cost"].mean() if has_bus else nan,
             "avg_realized_cost_car": car_df["realized_cost"].mean() if has_car else nan,
+        }
+        return {
+            k: round(v, 3) if isinstance(v, float) else v
+            for k, v in result.items()
         }
 
     def _compute_day_summary(self, day_index):
@@ -324,6 +348,14 @@ class SeasonOrchestrator:
             )
             if bus_costs is not None:
                 metrics.update(bus_costs)
+
+        # run metadata for this day
+        day_wt = max(self._day_wall_time, 0.001)
+        metrics["wall_time_seconds"] = round(self._day_wall_time, 2)
+        metrics["steps"] = self._day_steps
+        metrics["vehicle_steps"] = self._day_vehicle_steps
+        metrics["steps_per_second"] = round(self._day_steps / day_wt, 1)
+        metrics["vehicle_steps_per_second"] = round(self._day_vehicle_steps / day_wt, 1)
 
         summary = {"day_index": day_index, **metrics}
         self.day_summaries.append(summary)
@@ -379,6 +411,10 @@ class SeasonOrchestrator:
             "avg_travel_propensity": day_df["travel_propensity"].mean(),
             "avg_history_len": history_lengths.mean() if not history_lengths.empty else 0.0,
         }
+        sp_summary = {
+            k: round(v, 3) if isinstance(v, float) else v
+            for k, v in sp_summary.items()
+        }
 
         self.sp_day_summaries.append(sp_summary)
         return sp_summary
@@ -413,6 +449,7 @@ class SeasonOrchestrator:
         summary = {
             "season_id": self.config.season_id,
             "days_run": df["day_index"].nunique(),
+            "commit": _get_git_commit_short(),
             "wall_time_seconds": round(self._wall_time, 2),
             "total_steps": self._total_steps,
             "total_vehicle_steps": self._total_vehicle_steps,
@@ -535,6 +572,8 @@ class SeasonOrchestrator:
         if "day_index" in df.columns and "season_person_id" in df.columns:
             df = df.sort_values(["day_index", "season_person_id"])
 
+        float_cols = df.select_dtypes(include="float").columns
+        df[float_cols] = df[float_cols].round(3)
         return df.reset_index(drop=True)
 
     def get_season_person_log_df(self):
@@ -571,6 +610,8 @@ class SeasonOrchestrator:
         if "day_index" in df.columns and "person_id" in df.columns:
             df = df.sort_values(["day_index", "person_id"])
 
+        float_cols = df.select_dtypes(include="float").columns
+        df[float_cols] = df[float_cols].round(3)
         return df.reset_index(drop=True)
 
     def get_day_summary_df(self):
@@ -606,6 +647,9 @@ class SeasonOrchestrator:
             # bus cost
             "bus_cost_active_buses", "bus_cost_total_fleet", "bus_cost_cycle_time_min",
             "bus_cost_per_hour", "bus_cost_model_run", "bus_cost_daily", "bus_cost_annual",
+            # run metadata
+            "wall_time_seconds", "steps", "vehicle_steps",
+            "steps_per_second", "vehicle_steps_per_second",
         ]
         first = [c for c in col_order if c in df.columns]
         rest = [c for c in df.columns if c not in first]

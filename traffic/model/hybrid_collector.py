@@ -35,7 +35,7 @@ class HybridCollectorConfig:
         'step', 'current_toll', 'vehicle_count', 'active_cars', 'active_buses',
         'persons_at_bus_stop', 'persons_finished',
         'persons_pool_remaining', 'persons_in_transit',
-        'p_generate',
+        'p_generate', 'too_close_counter', 'start_point_cumulative_shift',
     ])
 
     # Tier 1: Window-based scalars (use tier1_window_seconds)
@@ -155,6 +155,14 @@ TIER1_SCALARS: Dict[str, Dict[str, Any]] = {
     'p_generate': {
         'dtype': np.float32,
         'fn': lambda m: m.p_generate,
+    },
+    'too_close_counter': {
+        'dtype': np.int32,
+        'fn': lambda m: m.too_close_counter,
+    },
+    'start_point_cumulative_shift': {
+        'dtype': np.float32,
+        'fn': lambda m: m.start_point_cumulative_shift,
     },
 }
 

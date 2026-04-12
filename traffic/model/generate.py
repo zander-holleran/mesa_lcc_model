@@ -2,20 +2,19 @@ _MPH_TO_MPS = 1609.34 / 3600  # consistent with unit_conversion_utils.get_mps
 
 
 def too_close(model):
-    if not model.vehicles_list:
-        return
-    v = model.vehicles_list[-1]
     vs = model.vs
-    slot = vs.vid_to_slot.get(v.unique_id)
-    if slot is None:
+    n = vs.n_active
+    if n == 0:
         return
-    vx, vy = float(vs.pos_x[slot]), float(vs.pos_y[slot])
-    sx, sy = model.start_point
-    dist = ((vx - sx)**2 + (vy - sy)**2)**0.5
+    spawn_dist = _spawn_offset(model)
     closeness_threshold = 1
-    if dist < closeness_threshold:
-        model.start_point = (model.start_point[0], model.start_point[1]+1)
+    min_gap = float((vs.dist[:n] - spawn_dist).min())
+    while min_gap < closeness_threshold:
+        model.start_point = (model.start_point[0], model.start_point[1] + 1)
         model.too_close_counter += 1
+        model.start_point_cumulative_shift += 1.0
+        spawn_dist = _spawn_offset(model)
+        min_gap = float((vs.dist[:n] - spawn_dist).min())
 
 def _spawn_offset(model) -> float:
     """Negative distance from initial_start_point to current start_point.
