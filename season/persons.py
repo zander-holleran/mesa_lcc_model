@@ -19,6 +19,9 @@ class SeasonPerson:
     uncertainty_multiplier: float
     travel_propensity: float
 
+    forced_mode: bool = False
+    assigned_mode: str | None = None
+
     # full history of realized experiences
     history: List[Dict[str, Any]] = field(default_factory=list)
     realized_costs: List[Dict[str, Any]] = field(default_factory=list)

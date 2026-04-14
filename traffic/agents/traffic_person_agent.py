@@ -61,6 +61,9 @@ class TrafficPersonAgent(Agent):
         return value_of_time * experience_weight * effective_tt + toll
 
     def decide_mode(self) -> str:
+        if self._season_person_ref.assigned_mode is not None:
+            return self._season_person_ref.assigned_mode
+
         car_cost = self.compute_expected_generalized_cost(
             expected_travel_time=self.expected_tt_car,
             travel_time_uncertainty=self.tt_unc_car,

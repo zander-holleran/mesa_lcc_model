@@ -150,8 +150,18 @@ class SeasonOrchestrator:
         return tm
     
     def _update_beliefs(self, day_index):
-        for person in self.season_persons:
-            person.update_beliefs_from_history(current_day=day_index)
+        cp = self.config.car_preference
+        if cp is not None:
+            median_vot = self.config.population_params.value_of_time.median()
+            for person in self.season_persons:
+                person.forced_mode = True
+                person.assigned_mode = "car" if self.rng.random() < cp else "bus"
+                person.value_of_time = median_vot
+        else:
+            for person in self.season_persons:
+                person.forced_mode = False
+                person.assigned_mode = None
+                person.update_beliefs_from_history(current_day=day_index)
 
          
     def _build_model(self, day_cfg) -> TrafficModel:
@@ -183,7 +193,6 @@ class SeasonOrchestrator:
 
             # irrelevant for season runs
             p_generate=None,
-            car_preference=1,
             hybrid_collector_config=self.config.hybrid_collector_config,
             silent=self.silent,
         )
@@ -241,12 +250,24 @@ class SeasonOrchestrator:
         Stores a deep copy of all public attributes so future mutations
         do not change the logged record.
         """
+        _NULL_BELIEF_FIELDS = {
+            "expected_tt_car", "expected_tt_bus",
+            "prior_car", "prior_bus",
+            "travel_time_uncertainty_car", "travel_time_uncertainty_bus",
+            "experience_weight_car", "experience_weight_bus",
+            "uncertainty_multiplier",
+        }
+        null_beliefs = self.config.car_preference is not None
+
         for sp in self.season_persons:
             snapshot = {"day_index": day_index}
             for attr, val in vars(sp).items():
                 if attr.startswith("_"):
                     continue
-                snapshot[attr] = copy.deepcopy(val)
+                if null_beliefs and attr in _NULL_BELIEF_FIELDS:
+                    snapshot[attr] = None
+                else:
+                    snapshot[attr] = copy.deepcopy(val)
             self.season_person_log_rows.append(snapshot)
 
 
@@ -398,15 +419,16 @@ class SeasonOrchestrator:
             day_df["history"].apply(len) if "history" in day_df else pd.Series(dtype=float)
         )
 
+        null_beliefs = self.config.car_preference is not None
         sp_summary = {
             "day_index": day_index,
             "total_persons": len(day_df),
-            "avg_expected_tt_car": day_df["expected_tt_car"].mean(),
-            "avg_expected_tt_bus": day_df["expected_tt_bus"].mean(),
-            "avg_prior_car": day_df["prior_car"].mean(),
-            "avg_prior_bus": day_df["prior_bus"].mean(),
-            "avg_travel_time_uncertainty_car": day_df["travel_time_uncertainty_car"].mean(),
-            "avg_travel_time_uncertainty_bus": day_df["travel_time_uncertainty_bus"].mean(),
+            "avg_expected_tt_car": None if null_beliefs else day_df["expected_tt_car"].mean(),
+            "avg_expected_tt_bus": None if null_beliefs else day_df["expected_tt_bus"].mean(),
+            "avg_prior_car": None if null_beliefs else day_df["prior_car"].mean(),
+            "avg_prior_bus": None if null_beliefs else day_df["prior_bus"].mean(),
+            "avg_travel_time_uncertainty_car": None if null_beliefs else day_df["travel_time_uncertainty_car"].mean(),
+            "avg_travel_time_uncertainty_bus": None if null_beliefs else day_df["travel_time_uncertainty_bus"].mean(),
             "avg_value_of_time": day_df["value_of_time"].mean(),
             "avg_travel_propensity": day_df["travel_propensity"].mean(),
             "avg_history_len": history_lengths.mean() if not history_lengths.empty else 0.0,

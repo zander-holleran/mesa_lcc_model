@@ -156,6 +156,9 @@ class SeasonConfig:
     # optional hybrid collector config for TrafficModel
     hybrid_collector_config: Optional[HybridCollectorConfig] = None
 
+    # exogenous mode choice override (None = belief-driven, 0.0-1.0 = P(car))
+    car_preference: Optional[float] = None
+
 
 # ====================== Factory function to create SeasonConfig objects ====================== #
 # This is the final user-facing function. It creates a SeasonConfig object from high-level specs.
@@ -192,6 +195,8 @@ def make_season_config(
     population_params: PopulationParams = None,
 
     hybrid_collector_config: HybridCollectorConfig = None,
+
+    car_preference: float = None,
 
 ) -> SeasonConfig:
     rng = np.random.default_rng(seed)
@@ -237,7 +242,8 @@ def make_season_config(
         # per-day parameters sent to TrafficModel
         day_params=day_params,
         population_params=population_params,
-        hybrid_collector_config=hybrid_collector_config
+        hybrid_collector_config=hybrid_collector_config,
+        car_preference=car_preference,
     )
 
 

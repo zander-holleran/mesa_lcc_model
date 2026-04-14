@@ -29,7 +29,7 @@ class TrafficModel(Model):
     def __init__(self, road_gdf, ecs_df, max_steps=50000, seed=123,
                  start_hr=5, traffic_percentile=None, p_generate=None, max_persons=50,
                  canyon_closures={},
-                 bus_interval=30, car_preference=1, bus_capacity=30,
+                 bus_interval=30, bus_capacity=30,
                  crashes_per_100k_vmt_input=4,
                  toll_config: TollConfig = None,
                  bus_user_fee: float = 0.0,
@@ -90,10 +90,6 @@ class TrafficModel(Model):
             
         # ===== bus centric perams =====
         self.bus_interval = bus_interval
-        if self.bus_interval == 0: 
-            self.car_preference = 1 
-        else: 
-            self.car_preference = car_preference
         self.bus_capacity = bus_capacity
         self.bus_first_departure = self.random.randint(0, self.bus_interval * 60)  # Random step between 0 and 5 mins
         self.next_bus_step = self.bus_first_departure
