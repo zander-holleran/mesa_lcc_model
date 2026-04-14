@@ -344,6 +344,7 @@ class Tier2Collector:
         self.ideal_gap_m = np.zeros(max_records, dtype=np.float32)
         self.driving_action = np.zeros(max_records, dtype=np.int8)
         self.speed_mps = np.zeros(max_records, dtype=np.float32)
+        self.road_segment_idx = np.zeros(max_records, dtype=np.int32)
 
     def collect(self, model) -> None:
         """Collect spatial data if at sample interval. Reads from VehicleStore."""
@@ -375,6 +376,7 @@ class Tier2Collector:
         self.ideal_gap_m[i:j] = vs.ideal_gap[:n_write].astype(np.float32)
         self.driving_action[i:j] = vs.driving_action[:n_write]
         self.speed_mps[i:j] = vs.speed[:n_write].astype(np.float32)
+        self.road_segment_idx[i:j] = vs.path_idx[:n_write]
 
         self._write_idx = j
 
@@ -404,6 +406,7 @@ class Tier2Collector:
             'driving_action': action_strs,
             'speed': self.speed_mps[:n] * 2.237,  # Convert to mph
             'speed_mps': self.speed_mps[:n],
+            'road_segment_idx': self.road_segment_idx[:n],
         })
 
         return df
