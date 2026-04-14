@@ -13,7 +13,7 @@ venv/
 data/*
 !data/.gitkeep
 
-notebooks/figures/*
+notebooks/figures/
 
 # ignore test baselines (generated locally, keep directory structure)
 tests/baselines/*
