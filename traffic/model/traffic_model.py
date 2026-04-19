@@ -19,27 +19,29 @@ import traffic.utils.distribution_utils as du
 # import other parts of model
 import traffic.model.generate as gen
 import traffic.model.init_helpers as ih
-from traffic.model.hybrid_collector import HybridDataCollector, HybridCollectorConfig
+from traffic.model.hybrid_collector import HybridDataCollector, DataCollectionConfig
 from collections import defaultdict
 
 
 class TrafficModel(Model):
     """Mesa model simulating traffic on the canyon road with a car cap."""
 
-    def __init__(self, road_gdf, ecs_df, max_steps=50000, seed=123, batchrun=False, collect_every_n=1,
+    def __init__(self, road_gdf, ecs_df, max_steps=50000, seed=123,
                  start_hr=5, traffic_percentile=None, p_generate=None, max_persons=50,
                  canyon_closures={},
-                 bus_interval=30, car_preference=1, bus_capacity=30,
+                 bus_interval=30, bus_capacity=30,
                  crashes_per_100k_vmt_input=4,
                  toll_config: TollConfig = None,
                  bus_user_fee: float = 0.0,
                  season_persons=None,
                  current_day = 0,
-                 hybrid_collector_config: HybridCollectorConfig = None,
+                 data_collection_config: DataCollectionConfig = None,
                  max_concurrent_vehicles: int = 5000,
+                 silent: bool = False,
                  ):
         super().__init__(seed=seed)
 
+        self.silent = silent
         self.created_counts = defaultdict(int) # temp
 
         self.rng = np.random.default_rng(seed)
@@ -60,8 +62,6 @@ class TrafficModel(Model):
         self.current_day = current_day
         self.expected_counts_seconds = ecs_df
         self.max_steps = max_steps
-        self.batchrun = batchrun
-        self.collect_every_n = collect_every_n
         self.initial_start_point = tuple(road_gdf.iloc[0].geometry.coords[0])  # never changes
         self.start_point = tuple(road_gdf.iloc[0].geometry.coords[0])          # may be moved by "too_close" logic
 
@@ -90,10 +90,6 @@ class TrafficModel(Model):
             
         # ===== bus centric perams =====
         self.bus_interval = bus_interval
-        if self.bus_interval == 0: 
-            self.car_preference = 1 
-        else: 
-            self.car_preference = car_preference
         self.bus_capacity = bus_capacity
         self.bus_first_departure = self.random.randint(0, self.bus_interval * 60)  # Random step between 0 and 5 mins
         self.next_bus_step = self.bus_first_departure
@@ -108,12 +104,15 @@ class TrafficModel(Model):
         self._p_generate_frozen = False
         self._exception_car_fraction = None
         self.too_close_counter = 0
+        self.start_point_cumulative_shift = 0.0
         self.person_counter = 0 
         self.bus_counter = 0 
         self.car_counter = 0 
         self.bus_riders = 0 
         self.at_bus_stop = []
         self.finished_agents = []
+        self.sp_finished_counter = 0
+        self.total_vehicle_steps = 0
 
         # ===== Set up ContinuousSpace =====
         buffer = 10000
@@ -136,12 +135,8 @@ class TrafficModel(Model):
         self.vid_to_vehicle: dict[int, object] = {}  # vid → VehicleAgent shell
 
         # set up the hybrid data collector using the provided config or fall back to defaults
-        collector_config = hybrid_collector_config or HybridCollectorConfig(
-            max_steps=max_steps,
-            tier2_sample_interval=collect_every_n,
-            tier2_enabled=not self.batchrun,  # Disable spatial data in batch mode
-        )
-        self.datacollector = HybridDataCollector(collector_config)
+        dc = data_collection_config or DataCollectionConfig()
+        self.datacollector = HybridDataCollector(dc, max_steps=max_steps)
 
         # agent lists
         self.vehicles_list = []
@@ -153,13 +148,15 @@ class TrafficModel(Model):
     def max_persons_check(self):
     # Stop model when entire population has completed a trip 
         if not self.season_person_pool and not self.traffic_persons_list:
-            print(f"{self.person_counter} people arrived stopping model.")
+            if not self.silent:
+                print(f"{self.person_counter} people arrived stopping model.")
             self.running = False
     
     def max_steps_check(self):
         # Stop model at hard cap of steps
         if self.steps >= self.max_steps:
-            print(f"Reached max step count ({self.max_steps}). Stopping model.")
+            if not self.silent:
+                print(f"Reached max step count ({self.max_steps}). Stopping model.")
             self.running = False
 
     def should_crash_randomized_rounding(
@@ -208,6 +205,7 @@ class TrafficModel(Model):
 
     # -~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~ THE STEP  -~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
     def step(self):
+        self.total_vehicle_steps += len(self.vehicles_list)
         # Toll update
         self.update_tolls()
 
@@ -272,7 +270,7 @@ class TrafficModel(Model):
         self.max_persons_check()
 
     def run_model(self):
-        for _ in tqdm(range(self.max_steps), desc="Simulating", unit="step"):
+        for _ in tqdm(range(self.max_steps), desc="Simulating", unit="step", disable=self.silent):
             if not getattr(self, "running", True):
                 break
             self.step()

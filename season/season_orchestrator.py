@@ -4,9 +4,11 @@ from __future__ import annotations
 import copy
 from dataclasses import dataclass, asdict
 from pathlib import Path
+import shutil
 from typing import Any, Dict, Iterable, List, Optional, Protocol
 
 import json
+import subprocess
 import geopandas as gpd
 import numpy as np
 import pandas as pd
@@ -20,31 +22,44 @@ from traffic.utils import analysis_utils as au
 from season.configs import SeasonConfig
 
 
+def _get_git_commit_short() -> str:
+    """Return the short git commit hash, or 'unknown' on failure."""
+    try:
+        return subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            capture_output=True, text=True,
+        ).stdout.strip() or "unknown"
+    except Exception:
+        return "unknown"
+
+
 
 
 class SeasonOrchestrator:
     """Run a series of daily simulations and persist their outputs."""
 
-    def __init__(self, season_config: SeasonConfig,  store_data: bool = False , output_root_dir: str = "data/season_outputs"):
+    def __init__(self, season_config: SeasonConfig,
+                 output_root_dir: str = "data/outputs/seasons", silent: bool = False):
         self.config = season_config
+        self.silent = silent
 
         self.road_gdf = gpd.read_parquet(self.config.road_path)
         self.ecs_df = pd.read_csv(self.config.ecs_path)
 
         self.season_persons = self.config.population_params.create_season_persons(
             season_id=self.config.season_id,
-            seed=self.config.seed,   
+            seed=self.config.seed,
         )
-        
+
         self.rng = np.random.default_rng(self.config.seed)
 
-        # define output directory for this season
-        self.store_data = store_data
-        self.output_dir = None
-        if store_data:
-            self.output_dir = Path(output_root_dir) / self.config.season_id
+        # always create output directory for this season
+        self.output_dir = Path(output_root_dir) / self.config.season_id
+        if self.output_dir.exists():
+            shutil.rmtree(self.output_dir)
+        self.output_dir.mkdir(parents=True)
+        if not self.silent:
             print(f"Season outputs will be saved to: {self.output_dir}")
-            self.output_dir.mkdir(parents=True, exist_ok=True)
 
         self.last_model_run = None
         self._next_day_ix = 0
@@ -54,22 +69,28 @@ class SeasonOrchestrator:
         self.season_person_log_rows = []  # list of dicts; snapshot per person per day
         self.sp_day_summaries = []        # list of per-day SP summaries
 
+        self._total_steps = 0
+        self._total_vehicle_steps = 0
+        self._wall_time = 0.0
+        self.season_summary = None  # populated by run_season()
+
     def run_season(self):
         """Run all days in the season config, in order."""
-        # could also just: for _ in self.config.day_params: self.run_day()
+        import time
+        t0 = time.perf_counter()
+
         for day_cfg in self.config.day_params:
             self.run_day(day_cfg)
 
-        season_summary = self._compute_season_summary()
+        self._wall_time = time.perf_counter() - t0
+        self.season_summary = self._compute_season_summary()
 
-        if self.store_data:
-            self._save_config()
-            self._save_season_summary(season_summary)
-
-            self._save_df_if_exists(self.get_trip_log_df(), "trip_log.parquet")
-            self._save_df_if_exists(self.get_day_summary_df(), "day_summary.parquet")
-            self._save_df_if_exists(self.get_season_person_log_df(), "season_person_log.parquet")
-            self._save_df_if_exists(self.get_sp_day_summary_df(), "sp_day_summary.parquet")
+        self._save_config()
+        self._save_season_summary(self.season_summary)
+        self._save_df_if_exists(self.get_trip_log_df(), "trip_log.parquet")
+        self._save_df_if_exists(self.get_day_summary_df(), "day_summary.parquet")
+        self._save_df_if_exists(self.get_season_person_log_df(), "season_person_log.parquet")
+        self._save_df_if_exists(self.get_sp_day_summary_df(), "sp_day_summary.parquet")
 
         
 
@@ -79,6 +100,8 @@ class SeasonOrchestrator:
         - If day_cfg is provided: use that.
         - If day_cfg is None: run the next day in config.day_params.
         """
+        import time
+
         if day_cfg is None:
             if self._next_day_ix >= len(self.config.day_params):
                 print("All days in season_config have already been run.")
@@ -96,10 +119,19 @@ class SeasonOrchestrator:
 
         # 2) build and run traffic model
         tm = self._build_model(day_cfg=day_cfg)
+        t0 = time.perf_counter()
         tm.run_model()
-        self.last_model_run = tm
+        day_wall_time = time.perf_counter() - t0
 
-        print(dict(tm.created_counts)) # temp
+        self.last_model_run = tm
+        self._total_steps += tm.steps
+        self._total_vehicle_steps += tm.total_vehicle_steps
+        self._day_wall_time = day_wall_time
+        self._day_steps = tm.steps
+        self._day_vehicle_steps = tm.total_vehicle_steps
+
+        if not self.silent:
+            print(dict(tm.created_counts)) # temp
 
 
         self._append_day_trip_log(day_index)
@@ -107,14 +139,23 @@ class SeasonOrchestrator:
         self._compute_day_summary(day_index)
         _ = self.compute_sp_day_summary(day_index)            
 
-        if self.store_data:
-            self._save_datacollector_outputs(day_index, tm)
+        self._save_datacollector_outputs(day_index, tm)
 
         return tm
     
     def _update_beliefs(self, day_index):
-        for person in self.season_persons:
-            person.update_beliefs_from_history(current_day=day_index)
+        cp = self.config.car_preference
+        if cp is not None:
+            median_vot = self.config.population_params.value_of_time.median()
+            for person in self.season_persons:
+                person.forced_mode = True
+                person.assigned_mode = "car" if self.rng.random() < cp else "bus"
+                person.value_of_time = median_vot
+        else:
+            for person in self.season_persons:
+                person.forced_mode = False
+                person.assigned_mode = None
+                person.update_beliefs_from_history(current_day=day_index)
 
          
     def _build_model(self, day_cfg) -> TrafficModel:
@@ -126,12 +167,11 @@ class SeasonOrchestrator:
             ecs_df=self.ecs_df,
 
             # season level parameters from config
-            batchrun=self.config.batch_run,
             max_steps=self.config.max_steps,
             max_persons=self.config.max_persons,
+            max_concurrent_vehicles=self.config.max_concurrent_vehicles,
             start_hr=self.config.start_hr,
             bus_capacity=self.config.bus_capacity,
-            collect_every_n=self.config.collect_every_n,
             toll_config=self.config.toll_config,
             bus_user_fee=self.config.bus_user_fee,
 
@@ -147,28 +187,30 @@ class SeasonOrchestrator:
 
             # irrelevant for season runs
             p_generate=None,
-            car_preference=1,
-            hybrid_collector_config=self.config.hybrid_collector_config,
+            data_collection_config=self.config.data_collection,
+            silent=self.silent,
         )
 #-----------------------------------------------------------------------------  
 # ------------------------- Compute logs + summaries -------------------------
 #-----------------------------------------------------------------------------
     def _save_datacollector_outputs(self, day_index, tm):
         prefix = f"day_{day_index}"
+        dc = tm.datacollector
 
-        # Tier 1: Aggregate metrics (model time series)
-        tier1_df = tm.datacollector.get_tier1_dataframe()
-        tier1_df.to_parquet(self.output_dir / f"{prefix}_model_ts.parquet")
+        if dc.tier1:
+            tier1_df = dc.get_tier1_dataframe()
+            if not tier1_df.empty:
+                tier1_df.to_parquet(self.output_dir / f"{prefix}_model_ts.parquet")
 
-        # Tier 2: Spatial data for animations
-        tier2_df = tm.datacollector.get_tier2_dataframe()
-        if not tier2_df.empty:
-            tier2_df.to_parquet(self.output_dir / f"{prefix}_spatial.parquet")
+        if dc.tier2:
+            tier2_df = dc.get_tier2_dataframe()
+            if not tier2_df.empty:
+                tier2_df.to_parquet(self.output_dir / f"{prefix}_spatial.parquet")
 
-        # Tier 3: Events (crashes, closures)
-        events_df = tm.datacollector.get_events_dataframe()
-        if not events_df.empty:
-            events_df.to_parquet(self.output_dir / f"{prefix}_events.parquet")
+        if dc.tier3:
+            events_df = dc.get_events_dataframe()
+            if not events_df.empty:
+                events_df.to_parquet(self.output_dir / f"{prefix}_events.parquet")
 
 
 
@@ -204,15 +246,90 @@ class SeasonOrchestrator:
         Stores a deep copy of all public attributes so future mutations
         do not change the logged record.
         """
+        _NULL_BELIEF_FIELDS = {
+            "expected_tt_car", "expected_tt_bus",
+            "prior_car", "prior_bus",
+            "travel_time_uncertainty_car", "travel_time_uncertainty_bus",
+            "experience_weight_car", "experience_weight_bus",
+            "uncertainty_multiplier",
+        }
+        null_beliefs = self.config.car_preference is not None
+
         for sp in self.season_persons:
             snapshot = {"day_index": day_index}
             for attr, val in vars(sp).items():
                 if attr.startswith("_"):
                     continue
-                snapshot[attr] = copy.deepcopy(val)
+                if null_beliefs and attr in _NULL_BELIEF_FIELDS:
+                    snapshot[attr] = None
+                else:
+                    snapshot[attr] = copy.deepcopy(val)
             self.season_person_log_rows.append(snapshot)
 
 
+
+    @staticmethod
+    def _aggregate_trips(df, median_vot):
+        """
+        Compute the canonical metric dict from a trip-log DataFrame.
+
+        Returns a dict with all target columns except identifiers
+        (season_id, days_run, day_index) which callers add themselves.
+        """
+        n = len(df)
+        if n == 0:
+            return None
+
+        bus_df = df[df["mode"] == "bus"]
+        car_df = df[df["mode"] == "car"]
+        has_bus = not bus_df.empty
+        has_car = not car_df.empty
+        nan = float("nan")
+
+        # per-trip VOT-standardized cost column (compute once, reuse)
+        vot_cost = df["realized_tt"] * median_vot + df["toll_paid"]
+
+        # VOT-standardized by mode
+        vot_std_bus = (bus_df["realized_tt"] * median_vot + bus_df["toll_paid"]).mean() if has_bus else nan
+        vot_std_car = (car_df["realized_tt"] * median_vot + car_df["toll_paid"]).mean() if has_car else nan
+
+        result = {
+            # overall
+            "total_persons": df["season_person_id"].nunique(),
+            "total_trips": n,
+            "car_trips": len(car_df),
+            "bus_trips": len(bus_df),
+            # travel time
+            "avg_tt": df["realized_tt"].mean(),
+            "avg_tt_bus": bus_df["realized_tt"].mean() if has_bus else nan,
+            "avg_tt_car": car_df["realized_tt"].mean() if has_car else nan,
+            "avg_cum_time_lost": df["cumtime_lost_min"].mean(),
+            "avg_cum_time_lost_bus": bus_df["cumtime_lost_min"].mean() if has_bus else nan,
+            "avg_cum_time_lost_car": car_df["cumtime_lost_min"].mean() if has_car else nan,
+            # bus
+            "share_bus": len(bus_df) / n,
+            "avg_wait_bus": bus_df["wait_time"].mean() if has_bus else nan,
+            "avg_onboard_time_bus": bus_df["onboard_time"].mean() if has_bus else nan,
+            # revenue
+            "total_rev": df["toll_paid"].sum(),
+            "avg_toll_car": car_df["toll_paid"].mean() if has_car else nan,
+            "avg_toll_bus": bus_df["toll_paid"].mean() if has_bus else nan,
+            "total_toll_car": car_df["toll_paid"].sum() if has_car else 0.0,
+            "total_toll_bus": bus_df["toll_paid"].sum() if has_bus else 0.0,
+            # VOT-standardized cost
+            "avg_cost_vot_standardized": vot_cost.mean(),
+            "avg_cost_vot_standardized_bus": vot_std_bus,
+            "avg_cost_vot_standardized_car": vot_std_car,
+            "avg_cost_vot_standardized_bus_car_delta": abs(vot_std_bus - vot_std_car),
+            # realized cost
+            "avg_realized_cost": df["realized_cost"].mean(),
+            "avg_realized_cost_bus": bus_df["realized_cost"].mean() if has_bus else nan,
+            "avg_realized_cost_car": car_df["realized_cost"].mean() if has_car else nan,
+        }
+        return {
+            k: round(v, 3) if isinstance(v, float) else v
+            for k, v in result.items()
+        }
 
     def _compute_day_summary(self, day_index):
         """
@@ -230,68 +347,51 @@ class SeasonOrchestrator:
             print(f"No trips recorded for day {day_index}.")
             return None
 
-        # persons / modes
-        total_persons = day_df["season_person_id"].nunique()
-        bus_df = day_df[day_df["mode"] == "bus"]
-        car_df = day_df[day_df["mode"] == "car"]
+        median_vot = self.config.population_params.value_of_time.median()
+        metrics = self._aggregate_trips(day_df, median_vot)
+        if metrics is None:
+            return None
 
-        share_bus = len(bus_df) / total_persons if total_persons > 0 else 0.0
+        # Bus cost calculation (post-hoc, zero sim overhead)
+        bc_config = self.config.bus_cost_config
+        tm = self.last_model_run
+        if bc_config is not None and tm.bus_interval > 0 and metrics.get("bus_trips", 0) > 0:
+            from traffic.model.bus_system_cost import compute_bus_costs
+            bus_costs = compute_bus_costs(
+                config=bc_config,
+                avg_one_way_tt_min=metrics["avg_tt_bus"],
+                headway_min=tm.bus_interval,
+                model_steps=tm.steps,
+            )
+            if bus_costs is not None:
+                metrics.update(bus_costs)
 
-        # total pop metrics
-        avg_tt                = day_df["realized_tt"].mean()
-        avg_cumtime_lost_min  = day_df["cumtime_lost_min"].mean()
-        avg_realized_cost     = day_df["realized_cost"].mean() 
-        avg_realized_cost_vot_standardized = day_df["realized_tt"].mean() * self.config.population_params.value_of_time.median() + day_df["toll_paid"].mean()
+        # run metadata for this day
+        day_wt = max(self._day_wall_time, 0.001)
+        metrics["wall_time_seconds"] = round(self._day_wall_time, 2)
+        metrics["steps"] = self._day_steps
+        metrics["vehicle_steps"] = self._day_vehicle_steps
+        metrics["steps_per_second"] = round(self._day_steps / day_wt, 1)
+        metrics["vehicle_steps_per_second"] = round(self._day_vehicle_steps / day_wt, 1)
 
-        # bus metrics
-        avg_wait_bus          = bus_df["wait_time"].mean()
-        avg_onboard_time_bus  = bus_df["onboard_time"].mean()
-        avg_tt_bus            = bus_df["realized_tt"].mean()
-        avg_cumlost_bus       = bus_df["cumtime_lost_min"].mean()
-        avg_realized_cost_bus = bus_df["realized_cost"].mean() 
-
-        # car metrics
-        avg_tt_car            = car_df["realized_tt"].mean()
-        avg_toll_car          = car_df["toll_paid"].mean()
-        total_toll_car        = car_df["toll_paid"].sum()
-        avg_cumlost_car       = car_df["cumtime_lost_min"].mean()
-        avg_realized_cost_car = bus_df["realized_cost"].mean() 
-
-        summary = {
-            "day_index": day_index,
-            "avg_tt":avg_tt,
-            "avg_cum_time_lost": avg_cumtime_lost_min,
-            "avg_realized_cost": avg_realized_cost,
-            "avg_realized_cost_vot_standardized":avg_realized_cost_vot_standardized,
-            "total_persons": total_persons,
-            "share_bus": share_bus,
-            "avg_wait_bus": avg_wait_bus,
-            "avg_onboard_time_bus":avg_onboard_time_bus,
-            "avg_tt_bus": avg_tt_bus,
-            "avg_realized_cost_bus":avg_realized_cost_bus,
-            "avg_tt_car": avg_tt_car,
-            "avg_toll_car": avg_toll_car,
-            "total_toll_car": total_toll_car,
-            "avg_cumlost_bus": avg_cumlost_bus,
-            "avg_cumlost_car": avg_cumlost_car,
-            "avg_realized_cost_car":avg_realized_cost_car
-        }
-
+        summary = {"day_index": day_index, **metrics}
         self.day_summaries.append(summary)
 
-        print(
+        if not self.silent:
+            bus_cost_str = f", bus_cost_daily:${summary['bus_cost_daily']:,.0f}" if "bus_cost_daily" in summary else ""
+            print(
                 f"Day:{day_index}: "
                 f"N:{summary['total_persons']}, "
                 f"Avg TT:{summary['avg_tt']:.1f} min, "
-                f"Avg_cumtime_lost:{summary['avg_cum_time_lost']:.1f} min, " 
-                f"Avg Cost (VOT standardized):${summary['avg_realized_cost_vot_standardized']:.1f}, "
-                f"Avg Realized Cost:${summary['avg_realized_cost']:.1f}, "
+                f"Avg CumTimeLost:{summary['avg_cum_time_lost']:.1f} min, "
+                f"VOT Std Cost:${summary['avg_cost_vot_standardized']:.1f}, "
+                f"Realized Cost:${summary['avg_realized_cost']:.1f}, "
                 f"bus_share:{summary['share_bus']:.2f}, "
                 f"avg_tt_bus:{summary['avg_tt_bus']:.1f} min, "
                 f"avg_tt_car:{summary['avg_tt_car']:.1f} min, "
                 f"avg_toll_car:${summary['avg_toll_car']:.2f}, "
-                f"Total toll:${summary['total_toll_car']:.2f}, " 
-                "\n" 
+                f"total_toll_car:${summary['total_toll_car']:.2f}"
+                f"{bus_cost_str}"
             )
         return summary
 
@@ -315,18 +415,23 @@ class SeasonOrchestrator:
             day_df["history"].apply(len) if "history" in day_df else pd.Series(dtype=float)
         )
 
+        null_beliefs = self.config.car_preference is not None
         sp_summary = {
             "day_index": day_index,
             "total_persons": len(day_df),
-            "avg_expected_tt_car": day_df["expected_tt_car"].mean(),
-            "avg_expected_tt_bus": day_df["expected_tt_bus"].mean(),
-            "avg_prior_car": day_df["prior_car"].mean(),
-            "avg_prior_bus": day_df["prior_bus"].mean(),
-            "avg_travel_time_uncertainty_car": day_df["travel_time_uncertainty_car"].mean(),
-            "avg_travel_time_uncertainty_bus": day_df["travel_time_uncertainty_bus"].mean(),
+            "avg_expected_tt_car": None if null_beliefs else day_df["expected_tt_car"].mean(),
+            "avg_expected_tt_bus": None if null_beliefs else day_df["expected_tt_bus"].mean(),
+            "avg_prior_car": None if null_beliefs else day_df["prior_car"].mean(),
+            "avg_prior_bus": None if null_beliefs else day_df["prior_bus"].mean(),
+            "avg_travel_time_uncertainty_car": None if null_beliefs else day_df["travel_time_uncertainty_car"].mean(),
+            "avg_travel_time_uncertainty_bus": None if null_beliefs else day_df["travel_time_uncertainty_bus"].mean(),
             "avg_value_of_time": day_df["value_of_time"].mean(),
             "avg_travel_propensity": day_df["travel_propensity"].mean(),
             "avg_history_len": history_lengths.mean() if not history_lengths.empty else 0.0,
+        }
+        sp_summary = {
+            k: round(v, 3) if isinstance(v, float) else v
+            for k, v in sp_summary.items()
         }
 
         self.sp_day_summaries.append(sp_summary)
@@ -341,133 +446,67 @@ class SeasonOrchestrator:
             return None
 
         df = pd.DataFrame(self.trip_log_rows)
-        days_run = df["day_index"].nunique()
-        total_trips = len(df)
-        bus_mask = df["mode"] == "bus"
-        car_mask = df["mode"] == "car"
+        median_vot = self.config.population_params.value_of_time.median()
+        metrics = self._aggregate_trips(df, median_vot)
+        if metrics is None:
+            return None
 
-        percent_bus = (bus_mask.sum() / total_trips * 100) if total_trips > 0 else 0.0
-        avg_tt = df['realized_tt'].mean()
-        avg_cost_all = df["realized_cost"].mean()
-        avg_marginal_cost_vot_standarized = max(df["realized_tt"].mean()-20, 0) * self.config.population_params.value_of_time.median() + df["toll_paid"].mean()
-        avg_cost_all_vot_standarized = df["realized_tt"].mean() * self.config.population_params.value_of_time.median() + df["toll_paid"].mean()
-        total_toll = df["toll_paid"].sum()
+        # Bus cost aggregation from day summaries
+        bc_config = self.config.bus_cost_config
+        if bc_config is not None and self.day_summaries:
+            run_costs = [d["bus_cost_model_run"] for d in self.day_summaries if d.get("bus_cost_model_run") is not None]
+            daily_costs = [d["bus_cost_daily"] for d in self.day_summaries if d.get("bus_cost_daily") is not None]
+            if run_costs:
+                metrics["bus_cost_season_total"] = round(sum(run_costs), 2)
+            if daily_costs:
+                avg_daily = sum(daily_costs) / len(daily_costs)
+                metrics["bus_cost_avg_daily"] = round(avg_daily, 2)
+                metrics["bus_cost_annual"] = round(avg_daily * bc_config.service_days_per_year, 2)
 
-        avg_cost_bus = df.loc[bus_mask, "realized_cost"].mean() if bus_mask.any() else float("nan")
-        avg_cost_car = df.loc[car_mask, "realized_cost"].mean() if car_mask.any() else float("nan")
-        avg_toll_car = df.loc[car_mask, "toll_paid"].mean() if car_mask.any() else float("nan")
-
-        # Compute 5-number summary for toll distribution (single pass)
-        if car_mask.any():
-            toll_values = df.loc[car_mask, "toll_paid"].values
-            toll_min, toll_q1, toll_med, toll_q3, toll_max = np.percentile(toll_values, [0, 25, 50, 75, 100])
-        else:
-            toll_min = toll_q1 = toll_med = toll_q3 = toll_max = float("nan")
-
+        wt = max(self._wall_time, 0.001)
         summary = {
-            "days_run": days_run,
-            "total_trips": total_trips,
-            'avg_tt':avg_tt,
-            'avg_marginal_cost_vot_standarized':avg_marginal_cost_vot_standarized,
-            "avg_cost_all_vot_standardized": avg_cost_all_vot_standarized,
-            "avg_cost_all": avg_cost_all,
-            "avg_cost_bus": avg_cost_bus,
-            "avg_cost_car": avg_cost_car,
-            "total_toll_revenue": total_toll,
-            "avg_toll_car": avg_toll_car,
-            "toll_min": toll_min,
-            "toll_q1": toll_q1,
-            "toll_median": toll_med,
-            "toll_q3": toll_q3,
-            "toll_max": toll_max,
-            "percent_bus_share": percent_bus,
+            "season_id": self.config.season_id,
+            "days_run": df["day_index"].nunique(),
+            "commit": _get_git_commit_short(),
+            "wall_time_seconds": round(self._wall_time, 2),
+            "total_steps": self._total_steps,
+            "total_vehicle_steps": self._total_vehicle_steps,
+            "avg_steps_per_second": round(self._total_steps / wt, 1),
+            "avg_vehicle_steps_per_second": round(self._total_vehicle_steps / wt, 1),
+            **metrics,
         }
 
-        print( 
-            f"Season Summary - Days Run: {days_run}, "
-            f"Total Trips: {total_trips}, "
-            f"\nAvg TT (all): {avg_tt:.2f}, "
-            "\n--- Cost Metrics --- "
-            f"\n     Marginal, Std VOT: ${avg_marginal_cost_vot_standarized:.2f}, "
-            f"\n     Std VOT: ${avg_cost_all_vot_standarized:.2f}, "
-            f"\n     All, Agent VOT: ${avg_cost_all:.2f}, "
-            f"\n     Bus, Agent VOT: ${avg_cost_bus:.2f}, "
-            f"\n     Car, Agent VOT: ${avg_cost_car:.2f}, "
-            "\n--- Tolling Metrics --- "
-            f"\nAvg Toll Cars: ${avg_toll_car:.2f}"
-            f"{self._ascii_boxplot(toll_min, toll_q1, toll_med, toll_q3, toll_max)}"
-            f"\nTotal Revenue: ${total_toll:.2f}"
-        )
+        if not self.silent:
+            bus_cost_str = ""
+            if "bus_cost_season_total" in summary:
+                bus_cost_str = (
+                    f"\n  Bus cost (sim period): ${summary['bus_cost_season_total']:,.0f}, "
+                    f"Bus cost (annual est): ${summary.get('bus_cost_annual', 0):,.0f}"
+                )
+
+            print(
+                f"Season Summary - {summary['season_id']}\n"
+                f"  Days: {summary['days_run']}, Trips: {summary['total_trips']} "
+                f"(car: {summary['car_trips']}, bus: {summary['bus_trips']})\n"
+                f"  Avg TT: {summary['avg_tt']:.1f} min, "
+                f"CumTimeLost: {summary['avg_cum_time_lost']:.1f} min\n"
+                f"  VOT Std Cost: ${summary['avg_cost_vot_standardized']:.1f}, "
+                f"Realized Cost: ${summary['avg_realized_cost']:.1f}\n"
+                f"  Bus share: {summary['share_bus']:.2f}, "
+                f"Avg toll car: ${summary['avg_toll_car']:.2f}, "
+                f"Total rev: ${summary['total_rev']:.2f}"
+                f"{bus_cost_str}"
+            )
 
         return summary
 
-    def _ascii_boxplot(self, mn, q1, med, q3, mx, width=40):
-        """Render a horizontal ASCII box plot with 5-number summary."""
-        if np.isnan(mn):
-            return "\n     [No toll data]"
-
-        # Scale positions to width
-        span = mx - mn if mx > mn else 1
-        def pos(v):
-            return int((v - mn) / span * (width - 1))
-
-        p_q1, p_med, p_q3 = pos(q1), pos(med), pos(q3)
-
-        # Build the box plot line
-        line = [" "] * width
-        # Whiskers
-        line[0] = "├"
-        line[-1] = "┤"
-        for i in range(1, p_q1):
-            line[i] = "─"
-        for i in range(p_q3 + 1, width - 1):
-            line[i] = "─"
-        # Box
-        for i in range(p_q1, p_q3 + 1):
-            line[i] = "█"
-        # Median marker
-        line[p_med] = "│"
-
-        plot_str = "".join(line)
-        summary_str = f"Min: ${mn:.2f}  Q1: ${q1:.2f}  Med: ${med:.2f}  Q3: ${q3:.2f}  Max: ${mx:.2f}"
-
-        return f"\n     {plot_str}\n     {summary_str}"
-
     def _save_season_summary(self, season_summary: dict):
-        # infer season_id from output_dir name (outputs/{season_id})
-        season_id = getattr(self, "season_id", self.output_dir.name)
-
-        # add season_id into the summary (helps the CSV log a lot)
-        season_summary = dict(season_summary)
-        season_summary["season_id"] = season_id
-
-        # 1) per-season JSON in outputs/{season_id}/
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        json_path = self.output_dir / "season_summary.json"
-        json_path.write_text(json.dumps(season_summary, indent=2))
-
-        # 2) append to data/season_summary_log.csv, expanding columns as needed
-        data_dir = Path("data")
-        data_dir.mkdir(parents=True, exist_ok=True)
-        csv_path = data_dir / "season_summary_log.csv"
-
-        if csv_path.exists():
-            df = pd.read_csv(csv_path)
-
-            existing_cols = list(df.columns)
-            new_cols = [k for k in season_summary.keys() if k not in existing_cols]
-            df = df.reindex(columns=existing_cols + new_cols)
-
-            df.loc[len(df)] = {c: season_summary.get(c, None) for c in df.columns}
-        else:
-            df = pd.DataFrame([season_summary])
-
-        df.to_csv(csv_path, index=False)
+        parquet_path = self.output_dir / "season_summary.parquet"
+        pd.DataFrame([season_summary]).to_parquet(parquet_path, index=False)
 
     def _save_config(self):
         """Persist the SeasonConfig object next to other outputs."""
-        if self.output_dir is None:
-            return
         self.output_dir.mkdir(parents=True, exist_ok=True)
         config_path = self.output_dir / "season_config.json"
 
@@ -528,6 +567,8 @@ class SeasonOrchestrator:
         if "day_index" in df.columns and "season_person_id" in df.columns:
             df = df.sort_values(["day_index", "season_person_id"])
 
+        float_cols = df.select_dtypes(include="float").columns
+        df[float_cols] = df[float_cols].round(3)
         return df.reset_index(drop=True)
 
     def get_season_person_log_df(self):
@@ -564,6 +605,8 @@ class SeasonOrchestrator:
         if "day_index" in df.columns and "person_id" in df.columns:
             df = df.sort_values(["day_index", "person_id"])
 
+        float_cols = df.select_dtypes(include="float").columns
+        df[float_cols] = df[float_cols].round(3)
         return df.reset_index(drop=True)
 
     def get_day_summary_df(self):
@@ -582,15 +625,26 @@ class SeasonOrchestrator:
 
         col_order = [
             "day_index",
-            "total_persons",
-            "share_bus",
-            "avg_wait_bus",
-            "avg_tt_bus",
-            "avg_tt_car",
-            "avg_toll_car",
-            "total_toll_car",
-            "avg_cumlost_bus",
-            "avg_cumlost_car",
+            # overall
+            "total_persons", "total_trips", "car_trips", "bus_trips",
+            # travel time
+            "avg_tt", "avg_tt_bus", "avg_tt_car",
+            "avg_cum_time_lost", "avg_cum_time_lost_bus", "avg_cum_time_lost_car",
+            # bus
+            "share_bus", "avg_wait_bus", "avg_onboard_time_bus",
+            # revenue
+            "total_rev", "avg_toll_car", "avg_toll_bus", "total_toll_car", "total_toll_bus",
+            # VOT-standardized cost
+            "avg_cost_vot_standardized", "avg_cost_vot_standardized_bus_car_delta",
+            "avg_cost_vot_standardized_bus", "avg_cost_vot_standardized_car",
+            # realized cost
+            "avg_realized_cost", "avg_realized_cost_bus", "avg_realized_cost_car",
+            # bus cost
+            "bus_cost_active_buses", "bus_cost_total_fleet", "bus_cost_cycle_time_min",
+            "bus_cost_per_hour", "bus_cost_model_run", "bus_cost_daily", "bus_cost_annual",
+            # run metadata
+            "wall_time_seconds", "steps", "vehicle_steps",
+            "steps_per_second", "vehicle_steps_per_second",
         ]
         first = [c for c in col_order if c in df.columns]
         rest = [c for c in df.columns if c not in first]
@@ -638,83 +692,5 @@ class SeasonOrchestrator:
         return df.reset_index(drop=True)
 
 
-# ----------------------------------------------------------------------------------
-# -------------------------  temp functions - delete later -------------------------
-# ----------------------------------------------------------------------------------
 
 
-    def run_day_temp(self):
-        """
-        Run a single-day simulation, compute avg cumtime_lost_sec,
-        and append one summary row to results_df.
-
-        results_df is a pandas DataFrame that you pass in.
-        """
-        day_cfg = self.config.day_params[0]
-
-        tm = self._build_model(day_cfg=day_cfg)
-        tm.run_model()
-
-        # --- collect cumtime_lost_sec from all SeasonPersons ---
-        cumtimes = []
-        realized_tts = []
-        n_car = 0
-        n_bus = 0
-
-        for sp in self.season_persons:
-            hist = sp.history  # list of dicts
-            if not hist:
-                continue
-
-            # assume cumtime_lost_sec in the *last* record is the cumulative value
-            last = hist[-1]
-            if "cumtime_lost_sec" in last:
-                cumtimes.append(last["cumtime_lost_sec"])
-            if "realized_tt" in last:
-                realized_tts.append(last["realized_tt"])
-            
-            # mode counts from final record
-            mode = last.get("mode")
-            if mode == "car":
-                n_car += 1
-            elif mode == "bus":
-                n_bus += 1
-
-        if cumtimes:
-            avg_cumtime_lost_sec = sum(cumtimes) / len(cumtimes)
-        else:
-            avg_cumtime_lost_sec = float("nan")
-
-        if realized_tts:
-            avg_realized_tt = sum(realized_tts) / len(realized_tts)
-        else:
-            avg_realized_tt = float("nan")
-
-        # --- pull metadata for this run ---
-        # tweak these attribute names to match your config
-        seed = getattr(self.config, "seed", None)
-        traffic_percentile = getattr(day_cfg, "traffic_percentile", None)
-        bus_interval  = getattr(day_cfg, "bus_interval", None)
-
-        car_toll = self.config.toll_config.get_initial_toll()
-        bus_prior = getattr(self.config.population_params, "prior_bus", None)
-        car_prior = getattr(self.config.population_params, "prior_car", None)
-
-        row = {
-            "seed": seed,
-            "traffic_percentile": traffic_percentile,
-            "car_toll": car_toll,
-            "avg_realized_tt": avg_realized_tt,
-            "avg_cumtime_lost_sec": avg_cumtime_lost_sec,
-            "bus_interval": bus_interval,
-            "bus_prior": bus_prior,
-            "n_car": n_car,
-            "n_bus": n_bus,
-        }
-
-        return row
-
-
-
-
-   

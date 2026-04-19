@@ -9,7 +9,6 @@ import sys
 import time
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import pandas as pd
 from season.season_orchestrator import SeasonOrchestrator
@@ -18,7 +17,7 @@ from season.configs import make_season_config, PopulationParams, ScheduleSpecs
 BASELINE_DIR = Path(__file__).parent / "baselines"
 DEFAULT_SEED = 99999
 
-# All collector preset names. "pre" means no HybridCollectorConfig (old system default).
+# All collector preset names. "pre" means no DataCollectionConfig (all tiers off by default).
 COLLECTOR_PRESETS = ["pre", "small", "medium", "large", "matched", "lean"]
 
 
@@ -26,61 +25,50 @@ COLLECTOR_PRESETS = ["pre", "small", "medium", "large", "matched", "lean"]
 
 def get_collector_config(size: str):
     """
-    Return a HybridCollectorConfig for the given preset name, or None for 'pre'/'medium'.
+    Return a DataCollectionConfig for the given preset name, or None for 'pre'/'medium'.
 
     Presets:
-        pre / medium : None (use TrafficModel default)
+        pre / medium : None (use TrafficModel default — all tiers off)
         small        : tier1 only, every 10 steps, minimal scalars
         large        : all tiers enabled, every step
-        matched      : replicates old reporting.py (collect_every_n=100, batch_run=True)
+        matched      : replicates old reporting.py (tier1 every 100 steps)
         lean         : leaner than old system (every 300 steps, 3 scalars)
     """
-    from traffic.model.hybrid_collector import HybridCollectorConfig
+    from traffic.model.hybrid_collector import DataCollectionConfig, Tier1Config, Tier2Config, Tier4Config
 
     if size == "small":
-        return HybridCollectorConfig(
-            tier1_interval=10,
-            tier1_scalars=["step", "vehicle_count", "total_finished"],
-            tier1_histograms=[],
-            tier2_enabled=False,
-            tier3_enabled=False,
-            tier4_enabled=False,
+        return DataCollectionConfig(
+            tier1=Tier1Config(
+                interval=10,
+                scalars=["step", "vehicle_count", "persons_finished"],
+                histograms=[],
+            ),
         )
     elif size == "large":
-        return HybridCollectorConfig(
-            tier1_interval=1,
-            tier2_enabled=True,
-            tier2_sample_interval=5,
-            tier2_max_samples=10000,
-            tier3_enabled=True,
-            tier4_enabled=True,
-            tier4_snapshot_interval=500,
-            tier4_snapshot_on_crash=True,
+        return DataCollectionConfig(
+            tier1=Tier1Config(interval=1),
+            tier2=Tier2Config(sample_interval=5, max_samples=10000),
+            tier3=True,
+            tier4=Tier4Config(snapshot_interval=500, snapshot_on_crash=True),
         )
     elif size == "matched":
-        # Replicates old reporting.py + Mesa DataCollector with collect_every_n=100, batch_run=True.
-        # Old model reporters: Step, current_toll_car, volume, at_bus_stop, bus_mode_share_recent.
-        # (avg_posted_sl_delta and bus_user_fee have no tier1 equivalent)
-        return HybridCollectorConfig(
-            tier1_interval=100,
-            tier1_scalars=[
-                "step", "current_toll", "vehicle_count",
-                "bus_riders_waiting", "bus_mode_share_recent",
-            ],
-            tier1_histograms=[],
-            tier2_enabled=False,
-            tier3_enabled=False,
-            tier4_enabled=False,
+        return DataCollectionConfig(
+            tier1=Tier1Config(
+                interval=100,
+                scalars=[
+                    "step", "current_toll", "vehicle_count",
+                    "persons_at_bus_stop", "bus_mode_share_recent",
+                ],
+                histograms=[],
+            ),
         )
     elif size == "lean":
-        # Leaner than old system: larger interval, minimal scalars for batch analysis.
-        return HybridCollectorConfig(
-            tier1_interval=300,
-            tier1_scalars=["step", "vehicle_count", "total_finished"],
-            tier1_histograms=[],
-            tier2_enabled=False,
-            tier3_enabled=False,
-            tier4_enabled=False,
+        return DataCollectionConfig(
+            tier1=Tier1Config(
+                interval=300,
+                scalars=["step", "vehicle_count", "persons_finished"],
+                histograms=[],
+            ),
         )
     else:  # "pre" or "medium" — use TrafficModel's built-in default
         return None
@@ -97,8 +85,6 @@ def get_congestion_config(seed: int = DEFAULT_SEED):
         n_days=2,
         max_persons=3000,
         max_steps=50000,
-        collect_every_n=100,
-        batch_run=True,
         road_path="data/roads/hw210_sl_and_curvs.parquet",
         ecs_path="data/vehicle_counts/expected_counts_seconds.csv",
         traffic_percentile_schedule=ScheduleSpecs("static", 90),
@@ -117,8 +103,6 @@ def get_free_flow_config(seed: int = DEFAULT_SEED):
         n_days=2,
         max_persons=3000,
         max_steps=50000,
-        collect_every_n=100,
-        batch_run=True,
         road_path="data/roads/hw210_sl_and_curvs.parquet",
         ecs_path="data/vehicle_counts/expected_counts_seconds.csv",
         traffic_percentile_schedule=ScheduleSpecs("static", 50),
@@ -146,12 +130,13 @@ def get_baseline_paths(scenario: str, collector_label: str):
 
 def run_single_benchmark(make_config, collector_config=None):
     """Run one benchmark iteration. Returns (metrics_dict, trip_log)."""
+    import tempfile
     config = make_config()
     if collector_config is not None:
-        config.hybrid_collector_config = collector_config
+        config.data_collection = collector_config
 
     start = time.perf_counter()
-    orch = SeasonOrchestrator(config, store_data=False)
+    orch = SeasonOrchestrator(config, output_root_dir=tempfile.mkdtemp(), silent=True)
     orch.run_season()
     elapsed = time.perf_counter() - start
 

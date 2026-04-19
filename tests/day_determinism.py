@@ -16,13 +16,13 @@ Usage:
 
 import pandas as pd
 import sys
+import tempfile
 from pathlib import Path
 
-# Add project root to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from season.season_orchestrator import SeasonOrchestrator
 from season.configs import make_season_config, PopulationParams, ScheduleSpecs
+from traffic.model.hybrid_collector import DataCollectionConfig, Tier1Config
 
 
 def run_day_determinism_test(seed: int = 12345, verbose: bool = True) -> bool:
@@ -43,14 +43,13 @@ def run_day_determinism_test(seed: int = 12345, verbose: bool = True) -> bool:
         n_days=1,
         max_persons=1000,
         max_steps=50000,
-        collect_every_n=10,
-        batch_run=True,
         road_path="data/roads/hw210_sl_and_curvs.parquet",
         ecs_path="data/vehicle_counts/expected_counts_seconds.csv",
         traffic_percentile_schedule=ScheduleSpecs("static", 50),
         bus_interval_schedule=ScheduleSpecs("static", 4),  # 4 min interval
         crashes_schedule=ScheduleSpecs("static", 5),
         population_params=PopulationParams(population_size=1000),
+        data_collection=DataCollectionConfig(tier1=Tier1Config()),
     )
 
     if verbose:
@@ -63,11 +62,11 @@ def run_day_determinism_test(seed: int = 12345, verbose: bool = True) -> bool:
     # Run 1
     if verbose:
         print("Running model (run 1)...")
-    orch1 = SeasonOrchestrator(config, store_data=False)
+    orch1 = SeasonOrchestrator(config, output_root_dir=tempfile.mkdtemp(), silent=True)
     orch1.run_day()
     model1 = orch1.last_model_run
 
-    model_ts1 = model1.datacollector.get_model_vars_dataframe()
+    model_ts1 = model1.datacollector.get_tier1_dataframe()
     trip_log1 = orch1.get_trip_log_df()
 
     run1_stats = {
@@ -82,11 +81,11 @@ def run_day_determinism_test(seed: int = 12345, verbose: bool = True) -> bool:
     # Run 2
     if verbose:
         print("Running model (run 2)...")
-    orch2 = SeasonOrchestrator(config, store_data=False)
+    orch2 = SeasonOrchestrator(config, output_root_dir=tempfile.mkdtemp(), silent=True)
     orch2.run_day()
     model2 = orch2.last_model_run
 
-    model_ts2 = model2.datacollector.get_model_vars_dataframe()
+    model_ts2 = model2.datacollector.get_tier1_dataframe()
     trip_log2 = orch2.get_trip_log_df()
 
     run2_stats = {

@@ -13,6 +13,8 @@ venv/
 data/*
 !data/.gitkeep
 
+notebooks/figures/
+
 # ignore test baselines (generated locally, keep directory structure)
 tests/baselines/*
 !tests/baselines/.gitkeep
@@ -23,3 +25,6 @@ prof.stats
 
 # MkDocs build output
 site/
+
+# Editable install artifacts
+*.egg-info/

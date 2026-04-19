@@ -3,8 +3,9 @@ from typing import Optional, Literal, Dict, Any, List, Callable
 import numpy as np
 from season.persons import SeasonPerson
 from scipy.stats import lognorm, skewnorm, norm
-from traffic.model.hybrid_collector import HybridCollectorConfig
+from traffic.model.hybrid_collector import DataCollectionConfig, Tier1Config, Tier2Config, Tier4Config
 from traffic.model.tolling import TollConfig
+from traffic.model.bus_system_cost import BusCostConfig
 
 # ===================== The following are imputs to SeasonConfig ====================== #
 @dataclass
@@ -127,12 +128,10 @@ class SeasonConfig:
     run_description: str
     seed: int
     n_days: int
-    batch_run: bool = True
-
     # TrafficModel season-level args
     max_steps: int = 50000
     max_persons: int = 50
-    collect_every_n: int = 10  
+    max_concurrent_vehicles: int = 5000
     start_hr: int = 5
     bus_capacity: int = 30
 
@@ -145,14 +144,23 @@ class SeasonConfig:
     toll_config: TollConfig = field(default_factory=lambda: TollConfig.static(car=0.0))
     bus_user_fee: float = 0.0
 
+    # bus cost estimation (post-hoc, zero sim overhead)
+    bus_cost_config: Optional[BusCostConfig] = None
+
     # the actual per-day parameters
     day_params: List[DayParams] = field(default_factory=list)
     
     # population parameters
     population_params: PopulationParams = field(default_factory=PopulationParams)
     
-    # optional hybrid collector config for TrafficModel
-    hybrid_collector_config: Optional[HybridCollectorConfig] = None
+    # data collection configuration
+    data_collection: Optional[DataCollectionConfig] = None
+
+    # sweep linkage (None for standalone seasons)
+    sweep_id: Optional[str] = None
+
+    # exogenous mode choice override (None = belief-driven, 0.0-1.0 = P(car))
+    car_preference: Optional[float] = None
 
 
 # ====================== Factory function to create SeasonConfig objects ====================== #
@@ -163,12 +171,10 @@ def make_season_config(
     run_description: str,
     seed: int,
     n_days: int,
-    batch_run: bool = True,
-
     # season-level TrafficModel settings
     max_steps: int = 99999,
     max_persons: int = 99999,
-    collect_every_n: int = 10,
+    max_concurrent_vehicles: int = 5000,
     start_hr: int = 7,
     bus_capacity: int = 60,
 
@@ -186,9 +192,16 @@ def make_season_config(
     toll: TollConfig = None,
     bus_user_fee: float = 0.0,
 
+    # bus cost estimation
+    bus_cost_config: BusCostConfig = None,
+
     population_params: PopulationParams = None,
 
-    hybrid_collector_config: HybridCollectorConfig = None,
+    data_collection: DataCollectionConfig = None,
+
+    car_preference: float = None,
+
+    sweep_id: str = None,
 
 ) -> SeasonConfig:
     rng = np.random.default_rng(seed)
@@ -220,21 +233,23 @@ def make_season_config(
         run_description=run_description,
         seed=seed,
         n_days=n_days,
-        batch_run=batch_run,
         # season level TrafficModel args
         max_steps=max_steps,
         max_persons=max_persons,
-        collect_every_n=collect_every_n,
+        max_concurrent_vehicles=max_concurrent_vehicles,
         start_hr=start_hr,
         bus_capacity=bus_capacity,
         road_path=road_path,
         ecs_path=ecs_path,
         toll_config=toll if toll is not None else TollConfig.static(car=0.0),
         bus_user_fee=bus_user_fee,
+        bus_cost_config=bus_cost_config,
         # per-day parameters sent to TrafficModel
         day_params=day_params,
         population_params=population_params,
-        hybrid_collector_config=hybrid_collector_config
+        data_collection=data_collection,
+        sweep_id=sweep_id,
+        car_preference=car_preference,
     )
 
 
@@ -285,6 +300,14 @@ def summarize_config(config: SeasonConfig, high_only: bool = True) -> None:
         toll_desc = "none"
     lines.append(f"  {b('Toll:')} {toll_desc}")
 
+    # bus cost config
+    if config.bus_cost_config is not None:
+        bc = config.bus_cost_config
+        lines.append(f"  {b('Bus cost:')} enabled (${bc.bus_purchase_price:,.0f}/bus, "
+                     f"${bc.driver_hourly_rate}/hr driver, {bc.service_days_per_year:.0f} days/yr)")
+    else:
+        lines.append(f"  {b('Bus cost:')} not configured")
+
     # ── Conditional high ──
     crashes = [dp.crashes_per_100k_vmt_input for dp in config.day_params]
     if any(c > 0 for c in crashes):
@@ -315,22 +338,22 @@ def summarize_config(config: SeasonConfig, high_only: bool = True) -> None:
             lines.append(f"  {b('Priors:')} car={pp.prior_car}, bus={pp.prior_bus}")
             lines.append(f"  {b('Belief params:')} decay={pp.time_decay_rate}, prior_wt={pp.prior_weight}, uncertainty_mult={pp.uncertainty_multiplier}")
 
-        hc = config.hybrid_collector_config
-        if hc:
+        dc = config.data_collection
+        if dc:
             parts = []
-            if hc.tier1_enabled:
-                parts.append(f"Tier 1 (scalars+histograms every {hc.tier1_interval} steps)")
-            if hc.tier2_enabled:
-                parts.append(f"Tier 2 (spatial snapshots every {hc.tier2_sample_interval} steps, up to {hc.tier2_max_agents_per_sample} agents)")
-            if hc.tier3_enabled:
+            if dc.tier1:
+                parts.append(f"Tier 1 (scalars+histograms every {dc.tier1.interval} steps)")
+            if dc.tier2:
+                parts.append(f"Tier 2 (spatial snapshots every {dc.tier2.sample_interval} steps, up to {dc.tier2.max_agents_per_sample} agents)")
+            if dc.tier3:
                 parts.append("Tier 3 (crash & closure event log)")
-            if hc.tier4_enabled:
+            if dc.tier4:
                 t4 = []
-                if hc.tier4_snapshot_interval > 0:
-                    t4.append(f"every {hc.tier4_snapshot_interval} steps")
-                if hc.tier4_snapshot_on_crash:
+                if dc.tier4.snapshot_interval > 0:
+                    t4.append(f"every {dc.tier4.snapshot_interval} steps")
+                if dc.tier4.snapshot_on_crash:
                     t4.append("on crash")
-                parts.append(f"Tier 4 (full snapshots {' & '.join(t4)}, max {hc.tier4_max_snapshots})")
+                parts.append(f"Tier 4 (full snapshots {' & '.join(t4)}, max {dc.tier4.max_snapshots})")
             if parts:
                 lines.append(f"  {b('Data collection:')}")
                 for p in parts:

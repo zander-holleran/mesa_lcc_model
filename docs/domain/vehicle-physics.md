@@ -2,9 +2,13 @@
 
 Vehicle behavior in the simulation is governed by individualized acceleration curves, multiple braking mechanisms, and a two-phase speed-then-move execution model.
 
+**Related:** [Speed](speed.md) | [Implicit Speed Limit](implicit-speed-limit.md) | [Cumulative Time Lost](cumulative-time-lost.md) | [Start Speed Ramp](start-speed-ramp.md)
+
 ---
 
 ## Acceleration Curves
+
+> **Full article:** [Acceleration Curves](acceleration-curves.md)
 
 Each vehicle gets a unique acceleration function built by `build_empirical_accel_function()` in `traffic/agents/vehicle_agent.py`. The function maps current speed (mph) to acceleration (m/s^2).
 
@@ -29,6 +33,8 @@ The simulation implements three distinct braking mechanisms, checked in priority
 
 ### 1. Gap-Based Braking (Smooth Brake)
 
+> **Full article:** [Gap Braking](gap-braking.md)
+
 Triggered when `gap < ideal_gap`. The braking force is computed by `less_smooth_brake()`:
 
 ```
@@ -42,6 +48,8 @@ The `ideal_gap` is `max(speed * ideal_distance_multiplier, 5)` meters -- it scal
 
 ### 2. Speed-Limit Braking
 
+> **Full article:** [Speed-Limit Braking](speed-limit-braking.md)
+
 Triggered when the vehicle exceeds its **implicit speed limit** (`posted_speed_limit + acceptable_over`). Deceleration is tiered:
 
 | Over by | Decel (m/s²) |
@@ -51,6 +59,8 @@ Triggered when the vehicle exceeds its **implicit speed limit** (`posted_speed_l
 | > 0 mph | 0.2 |
 
 ### 3. Curve-Based Braking
+
+> **Full article:** [Curve Braking](curve-braking.md)
 
 Built into the speed limit calculation via `get_speed_limit()`. The implicit speed limit is reduced by curvature:
 
@@ -80,6 +90,8 @@ This ensures no vehicle passes through the vehicle ahead in a single step, even 
 ---
 
 ## Close-Spawn Handling
+
+> **Full article:** [Close-Spawn Handling](close-spawn-handling.md)
 
 When a new vehicle spawns, `too_close()` in `traffic/model/generate.py` checks whether the most recent vehicle is within 1 meter of the start point. If so, the start point is shifted north by 1 meter:
 

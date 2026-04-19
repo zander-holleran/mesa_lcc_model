@@ -12,20 +12,22 @@ git clone https://github.com/zander-holleran/mesa_lcc_model.git
 cd mesa_lcc_model
 ```
 
-## Create a Virtual Environment (recommended)
+## Create the Environment
 
 ```bash
-python -m venv venv
-source venv/bin/activate  # macOS / Linux
+conda env create -f environment.yml
+conda activate mesa-lcc
 ```
 
-## Install Dependencies
+This creates the `mesa-lcc` conda environment with all required packages pinned to exact versions (Mesa, GeoPandas, NumPy, Pandas, SciPy, Matplotlib, Jupyter, and more).
+
+## Install the Project
 
 ```bash
-pip install -r requirements.txt
+pip install -e .
 ```
 
-This installs Mesa, GeoPandas, NumPy, Pandas, SciPy, Matplotlib, Jupyter, and all other required packages.
+This registers the `season` and `traffic` packages on the environment's path so they are importable from anywhere.
 
 ## Prepare Data Files
 

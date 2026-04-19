@@ -22,50 +22,54 @@ from traffic.utils import unit_conversion_utils as uc
 # =============================================================================
 
 @dataclass
-class HybridCollectorConfig:
-    """Configuration for HybridDataCollector."""
-    max_steps: int = 50000
+class Tier1Config:
+    """Configuration for Tier 1 aggregate metrics collection."""
+    interval: int = 1  # collect every Nth step
 
-    # Tier 1 enable + cadence
-    tier1_enabled: bool = True
-    tier1_interval: int = 1  # collect every Nth step
-
-    # Tier 1: Scalar metrics to collect (keys from TIER1_SCALARS)
-    tier1_scalars: List[str] = field(default_factory=lambda: [
+    scalars: list[str] = field(default_factory=lambda: [
         'step', 'current_toll', 'vehicle_count', 'active_cars', 'active_buses',
-        'bus_riders_waiting', 'bus_mode_share_recent', 'total_finished',
-        'p_generate',
+        'persons_at_bus_stop', 'persons_finished',
+        'persons_pool_remaining', 'persons_in_transit',
+        'p_generate', 'too_close_counter', 'start_point_cumulative_shift',
     ])
 
-    # Tier 1: Window-based scalars (use tier1_window_seconds)
-    tier1_window_scalars: List[str] = field(default_factory=lambda: [
+    window_scalars: list[str] = field(default_factory=lambda: [
         'recent_travel_time_avg',
+        'bus_mode_share_recent',
         'rolling_count_vehicles_generated',
         'rolling_count_persons_generated',
     ])
 
-    # Tier 1: Histogram metrics to collect (keys from TIER1_HISTOGRAMS)
-    tier1_histograms: List[str] = field(default_factory=lambda: [
+    histograms: list[str] = field(default_factory=lambda: [
         'implicit_sl_delta', 'speed_mps'
     ])
 
-    # Tier 2: Spatial sampling
-    tier2_sample_interval: int = 10
-    tier2_enabled: bool = True
-    tier2_max_samples: int = 5000
-    tier2_max_agents_per_sample: int = 200
+    window_seconds: int = 300
 
-    # Tier 3: Event logging
-    tier3_enabled: bool = True
 
-    # Tier 4: Full snapshots (disabled by default)
-    tier4_enabled: bool = False
-    tier4_snapshot_interval: int = 0
-    tier4_snapshot_on_crash: bool = False
-    tier4_max_snapshots: int = 100
+@dataclass
+class Tier2Config:
+    """Configuration for Tier 2 spatial sampling."""
+    sample_interval: int = 10
+    max_samples: int = 5000
+    max_agents_per_sample: int = 200
 
-    # Window size (seconds) for all tier1 window-based scalars
-    tier1_window_seconds: int = 300
+
+@dataclass
+class Tier4Config:
+    """Configuration for Tier 4 full snapshots."""
+    snapshot_interval: int = 0
+    snapshot_on_crash: bool = False
+    max_snapshots: int = 100
+
+
+@dataclass
+class DataCollectionConfig:
+    """Unified data collection configuration. All tiers default to off."""
+    tier1: Tier1Config | None = None   # None = off
+    tier2: Tier2Config | None = None   # None = off
+    tier3: bool = False                # off by default
+    tier4: Tier4Config | None = None   # None = off
 
 
 # =============================================================================
@@ -73,19 +77,16 @@ class HybridCollectorConfig:
 # =============================================================================
 
 def _compute_bus_mode_share(model) -> float:
-    """Compute % of recent persons who chose bus."""
+    """Compute % of persons created within window_seconds who chose bus."""
     persons = model.traffic_persons_list
     if not persons:
         return float('nan')
 
-    window = model.collect_every_n if model.collect_every_n >= 1 else 1
-    upper = model.steps
-    lower = max(0, upper - window + 1)
-
+    cutoff = model.steps - model.datacollector.tier1._window_seconds
     recent_n = 0
     bus_n = 0
     for p in persons:
-        if lower <= p.created_step <= upper:
+        if p.created_step >= cutoff:
             recent_n += 1
             if p.mode == "bus":
                 bus_n += 1
@@ -94,23 +95,22 @@ def _compute_bus_mode_share(model) -> float:
 
 
 def _compute_recent_travel_time(model) -> float:
-    """Compute mean travel time of trips completed within tier1_window_seconds."""
+    """Compute mean travel time of trips completed within window_seconds."""
     if not model.finished_agents:
         return float('nan')
 
-    window = model.datacollector.config.tier1_window_seconds
+    window = model.datacollector.tier1._window_seconds
     current_step = model.steps
     cutoff = current_step - window
 
     recent_times = []
     for agent in model.finished_agents:
-        # Check if agent finished within window
         created = agent.get('created_at_step', 0)
         steps_taken = agent.get('steps_taken', 0)
         finished_step = created + steps_taken
 
         if finished_step >= cutoff:
-            recent_times.append(steps_taken / 60.0)  # Convert to minutes
+            recent_times.append(steps_taken / 60.0)
 
     return np.mean(recent_times) if recent_times else float('nan')
 
@@ -137,21 +137,33 @@ TIER1_SCALARS: Dict[str, Dict[str, Any]] = {
         'dtype': np.int16,
         'fn': lambda m: sum(1 for v in m.vehicles_list if v.__class__.__name__ == 'BusAgent'),
     },
-    'bus_riders_waiting': {
+    'persons_at_bus_stop': {
         'dtype': np.int16,
         'fn': lambda m: len(m.at_bus_stop),
     },
-    'bus_mode_share_recent': {
-        'dtype': np.float32,
-        'fn': _compute_bus_mode_share,
-    },
-    'total_finished': {
+    'persons_finished': {
         'dtype': np.int32,
-        'fn': lambda m: len(m.finished_agents),
+        'fn': lambda m: m.sp_finished_counter,
+    },
+    'persons_pool_remaining': {
+        'dtype': np.int16,
+        'fn': lambda m: len(m.season_person_pool),
+    },
+    'persons_in_transit': {
+        'dtype': np.int16,
+        'fn': lambda m: len(m.traffic_persons_list),
     },
     'p_generate': {
         'dtype': np.float32,
         'fn': lambda m: m.p_generate,
+    },
+    'too_close_counter': {
+        'dtype': np.int32,
+        'fn': lambda m: m.too_close_counter,
+    },
+    'start_point_cumulative_shift': {
+        'dtype': np.float32,
+        'fn': lambda m: m.start_point_cumulative_shift,
     },
 }
 
@@ -162,6 +174,10 @@ TIER1_WINDOW_SCALARS: Dict[str, Dict[str, Any]] = {
     'recent_travel_time_avg': {
         'dtype': np.float32,
         'fn': _compute_recent_travel_time,
+    },
+    'bus_mode_share_recent': {
+        'dtype': np.float32,
+        'fn': _compute_bus_mode_share,
     },
     'rolling_count_vehicles_generated': {
         'dtype': np.int32,
@@ -191,46 +207,47 @@ TIER1_HISTOGRAMS: Dict[str, Dict[str, Any]] = {
 class Tier1Collector:
     """Collects aggregate metrics every step using pre-allocated numpy arrays."""
 
-    def __init__(self, config: HybridCollectorConfig):
-        self.config = config
+    def __init__(self, config: Tier1Config, max_steps: int):
+        self._interval = config.interval
+        self._window_seconds = config.window_seconds
         self._write_idx = 0
+        self._max_steps = max_steps
 
         # Pre-allocate scalar arrays
         self.scalar_arrays: Dict[str, np.ndarray] = {}
-        for name in config.tier1_scalars:
+        for name in config.scalars:
             if name in TIER1_SCALARS:
                 dtype = TIER1_SCALARS[name]['dtype']
-                self.scalar_arrays[name] = np.zeros(config.max_steps, dtype=dtype)
+                self.scalar_arrays[name] = np.zeros(max_steps, dtype=dtype)
 
         # Pre-allocate window scalar output arrays + internal cumulative arrays
         self.window_scalar_arrays: Dict[str, np.ndarray] = {}
         self._cumulative_arrays: Dict[str, np.ndarray] = {}
-        self._lookback = config.tier1_window_seconds // max(1, config.tier1_interval)
-        for name in config.tier1_window_scalars:
+        self._lookback = config.window_seconds // max(1, config.interval)
+        for name in config.window_scalars:
             if name in TIER1_WINDOW_SCALARS:
                 spec = TIER1_WINDOW_SCALARS[name]
                 dtype = spec['dtype']
-                self.window_scalar_arrays[name] = np.zeros(config.max_steps, dtype=dtype)
+                self.window_scalar_arrays[name] = np.zeros(max_steps, dtype=dtype)
                 if 'cumulative_fn' in spec:
-                    self._cumulative_arrays[name] = np.zeros(config.max_steps, dtype=dtype)
+                    self._cumulative_arrays[name] = np.zeros(max_steps, dtype=dtype)
 
         # Pre-allocate histogram arrays
         self.histogram_arrays: Dict[str, np.ndarray] = {}
-        for name in config.tier1_histograms:
+        for name in config.histograms:
             if name in TIER1_HISTOGRAMS:
                 n_bins = len(TIER1_HISTOGRAMS[name]['bins']) - 1
                 dtype = TIER1_HISTOGRAMS[name]['dtype']
-                # Shape: (max_steps, n_bins)
                 self.histogram_arrays[name] = np.zeros(
-                    (config.max_steps, n_bins), dtype=dtype
+                    (max_steps, n_bins), dtype=dtype
                 )
 
     def collect(self, model) -> None:
         """Collect all configured metrics for current step."""
-        interval = max(1, self.config.tier1_interval)
+        interval = max(1, self._interval)
         if interval > 1 and (model.steps % interval != 0):
             return
-        if self._write_idx >= self.config.max_steps:
+        if self._write_idx >= self._max_steps:
             return
 
         idx = self._write_idx
@@ -285,8 +302,6 @@ class Tier1Collector:
         for name, arr in self.histogram_arrays.items():
             bins = TIER1_HISTOGRAMS[name]['bins']
             for i in range(arr.shape[1]):
-                low = bins[i]
-                high = bins[i + 1]
                 col_name = f"{name}_bin_{i}"
                 data[col_name] = arr[:n, i]
 
@@ -310,13 +325,12 @@ class Tier2Collector:
     }
     ACTION_DECODE = {v: k for k, v in ACTION_MAP.items()}
 
-    def __init__(self, config: HybridCollectorConfig):
-        self.config = config
+    def __init__(self, config: Tier2Config):
+        self._sample_interval = config.sample_interval
         self._write_idx = 0
-        self._sample_interval = config.tier2_sample_interval
 
         # Pre-allocate arrays
-        max_records = config.tier2_max_samples * config.tier2_max_agents_per_sample
+        max_records = config.max_samples * config.max_agents_per_sample
 
         self.step = np.zeros(max_records, dtype=np.int32)
         self.agent_id = np.zeros(max_records, dtype=np.int32)
@@ -329,6 +343,7 @@ class Tier2Collector:
         self.ideal_gap_m = np.zeros(max_records, dtype=np.float32)
         self.driving_action = np.zeros(max_records, dtype=np.int8)
         self.speed_mps = np.zeros(max_records, dtype=np.float32)
+        self.road_segment_idx = np.zeros(max_records, dtype=np.int32)
 
     def collect(self, model) -> None:
         """Collect spatial data if at sample interval. Reads from VehicleStore."""
@@ -360,6 +375,7 @@ class Tier2Collector:
         self.ideal_gap_m[i:j] = vs.ideal_gap[:n_write].astype(np.float32)
         self.driving_action[i:j] = vs.driving_action[:n_write]
         self.speed_mps[i:j] = vs.speed[:n_write].astype(np.float32)
+        self.road_segment_idx[i:j] = vs.path_idx[:n_write]
 
         self._write_idx = j
 
@@ -389,6 +405,7 @@ class Tier2Collector:
             'driving_action': action_strs,
             'speed': self.speed_mps[:n] * 2.237,  # Convert to mph
             'speed_mps': self.speed_mps[:n],
+            'road_segment_idx': self.road_segment_idx[:n],
         })
 
         return df
@@ -423,8 +440,7 @@ class TrafficEvent:
 class Tier3Collector:
     """Collects discrete events like crashes and closures."""
 
-    def __init__(self, config: HybridCollectorConfig):
-        self.config = config
+    def __init__(self):
         self.events: List[TrafficEvent] = []
 
     def log_crash(self, model, segment_index: int, duration: int) -> None:
@@ -466,21 +482,21 @@ class Tier3Collector:
 class Tier4Collector:
     """Captures complete agent state at key moments for debugging."""
 
-    def __init__(self, config: HybridCollectorConfig):
-        self.config = config
+    def __init__(self, config: Tier4Config):
+        self._snapshot_interval = config.snapshot_interval
+        self._snapshot_on_crash = config.snapshot_on_crash
+        self._max_snapshots = config.max_snapshots
         self.snapshots: List[Dict[str, Any]] = []
 
     def maybe_collect(self, model, trigger: str = "interval") -> None:
         """Collect snapshot if conditions are met."""
-        if not self.config.tier4_enabled:
-            return
-        if len(self.snapshots) >= self.config.tier4_max_snapshots:
+        if len(self.snapshots) >= self._max_snapshots:
             return
 
         should_snap = False
-        if trigger == "interval" and self.config.tier4_snapshot_interval > 0:
-            should_snap = model.steps % self.config.tier4_snapshot_interval == 0
-        elif trigger == "crash" and self.config.tier4_snapshot_on_crash:
+        if trigger == "interval" and self._snapshot_interval > 0:
+            should_snap = model.steps % self._snapshot_interval == 0
+        elif trigger == "crash" and self._snapshot_on_crash:
             should_snap = True
 
         if not should_snap:
@@ -528,8 +544,8 @@ class HybridDataCollector:
     pre-allocated numpy array approach.
 
     Usage:
-        config = HybridCollectorConfig(tier2_sample_interval=10)
-        collector = HybridDataCollector(config)
+        config = DataCollectionConfig(tier1=Tier1Config(), tier2=Tier2Config())
+        collector = HybridDataCollector(config, max_steps=10000)
 
         # In model step:
         collector.collect(model)
@@ -543,14 +559,12 @@ class HybridDataCollector:
         events_df = collector.get_events_dataframe()
     """
 
-    def __init__(self, config: HybridCollectorConfig):
-        self.config = config
-
-        # Initialize tier collectors
-        self.tier1 = Tier1Collector(config) if config.tier1_enabled else None
-        self.tier2 = Tier2Collector(config) if config.tier2_enabled else None
-        self.tier3 = Tier3Collector(config) if config.tier3_enabled else None
-        self.tier4 = Tier4Collector(config) if config.tier4_enabled else None
+    def __init__(self, config: DataCollectionConfig, max_steps: int):
+        # Initialize tier collectors based on config (None = off)
+        self.tier1 = Tier1Collector(config.tier1, max_steps) if config.tier1 else None
+        self.tier2 = Tier2Collector(config.tier2) if config.tier2 else None
+        self.tier3 = Tier3Collector() if config.tier3 else None
+        self.tier4 = Tier4Collector(config.tier4) if config.tier4 else None
 
     def collect(self, model) -> None:
         """Main collection method - call every step."""
@@ -598,30 +612,3 @@ class HybridDataCollector:
         if self.tier4:
             return self.tier4.snapshots
         return []
-
-    # === Compatibility Methods (for existing code) ===
-
-    def get_model_vars_dataframe(self) -> pd.DataFrame:
-        """Compatibility: returns Tier 1 data in Mesa DataCollector format."""
-        df = self.get_tier1_dataframe()
-        if df.empty:
-            return df
-
-        # Rename columns for compatibility
-        rename_map = {
-            'vehicle_count': 'volume',
-            'step': 'Step',
-        }
-        df = df.rename(columns=rename_map)
-        return df
-
-    def get_agent_vars_dataframe(self) -> pd.DataFrame:
-        """Compatibility: returns Tier 2 data in Mesa DataCollector format."""
-        df = self.get_tier2_dataframe()
-        if df.empty:
-            return df
-
-        # Add implicit_sl_delta and posted_sl_delta for compatibility
-        # These would need vehicle speed limit data, which we don't store in tier2
-        # For now, just return what we have
-        return df

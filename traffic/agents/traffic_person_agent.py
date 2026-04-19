@@ -61,6 +61,9 @@ class TrafficPersonAgent(Agent):
         return value_of_time * experience_weight * effective_tt + toll
 
     def decide_mode(self) -> str:
+        if self._season_person_ref.assigned_mode is not None:
+            return self._season_person_ref.assigned_mode
+
         car_cost = self.compute_expected_generalized_cost(
             expected_travel_time=self.expected_tt_car,
             travel_time_uncertainty=self.tt_unc_car,
@@ -114,8 +117,10 @@ class TrafficPersonAgent(Agent):
                 wait_time=wait_time,
                 onboard_time=onboard_time,
                 cumtime_lost_min=cumtime_lost_min,
-                realized_cost=realized_cost
+                realized_cost=realized_cost,
+                vehicle_id=self.vehicle.unique_id if self.vehicle else None,
             )
+            self.model.sp_finished_counter += 1
                 
         self.status = "arrived"
 

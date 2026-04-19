@@ -64,7 +64,7 @@ Mesa's built-in `DataCollector` creates Python objects each step, which becomes 
 
 **Limits:** Up to `tier2_max_agents_per_sample` agents per sample, up to `tier2_max_samples` total samples.
 
-**Disabled in batch mode** by default (`tier2_enabled = not batchrun`) since animations aren't needed for parameter sweeps.
+**Disabled by default in sweep configs** — set `tier2_enabled=False` in the `HybridCollectorConfig`.
 
 ---
 

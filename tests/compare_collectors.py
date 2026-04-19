@@ -1,7 +1,7 @@
 """
-Evaluate multiple HybridCollectorConfig presets against a scenario in a single run.
+Evaluate multiple DataCollectionConfig presets against a scenario in a single run.
 
-Always runs 'pre' (no HybridCollectorConfig) as the reference. Each other config
+Always runs 'pre' (no DataCollectionConfig) as the reference. Each other config
 is checked for output determinism against 'pre', and timing is compared.
 
 Usage:
@@ -25,7 +25,6 @@ Available collectors:  pre, small, medium, large, matched, lean
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from perf_utils import (
     compare_collector_configs, SCENARIOS, COLLECTOR_PRESETS, DEFAULT_SEED,
@@ -35,7 +34,7 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(
-        description="Compare HybridCollectorConfig presets for a scenario.",
+        description="Compare DataCollectionConfig presets for a scenario.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
