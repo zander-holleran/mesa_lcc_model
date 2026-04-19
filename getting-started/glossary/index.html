@@ -1,0 +1,1599 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+        <link rel="canonical" href="https://zander-holleran.github.io/mesa_lcc_model/getting-started/glossary/">
+      
+      
+        <link rel="prev" href="../first-run/">
+      
+      
+        <link rel="next" href="../../domain/lcc-context/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Glossary - LCC Traffic Model Wiki</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#glossary" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="LCC Traffic Model Wiki" class="md-header__button md-logo" aria-label="LCC Traffic Model Wiki" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            LCC Traffic Model Wiki
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Glossary
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/zander-holleran/mesa_lcc_model" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    zander-holleran/mesa_lcc_model
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../installation/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../domain/lcc-context/" class="md-tabs__link">
+          
+  
+  
+  Domain Model
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../architecture/system-overview/" class="md-tabs__link">
+          
+  
+  
+  Architecture
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../experiments/" class="md-tabs__link">
+          
+  
+  
+  Experiments & Results
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="LCC Traffic Model Wiki" class="md-nav__button md-logo" aria-label="LCC Traffic Model Wiki" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    LCC Traffic Model Wiki
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/zander-holleran/mesa_lcc_model" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    zander-holleran/mesa_lcc_model
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation & Setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../first-run/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    First Run
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Glossary
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Glossary
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#simulation-hierarchy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Simulation Hierarchy
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#agent-types" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Agent Types
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#person-belief-parameters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Person &amp; Belief Parameters
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#vehicle-driver-parameters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Vehicle &amp; Driver Parameters
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#generation-parameters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Generation Parameters
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tolling-system" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tolling System
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#data-collection-hybriddatacollector" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Data Collection (HybridDataCollector)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#vehicle-dynamics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Vehicle Dynamics
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#trip-output-terms" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Trip Output Terms
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#configuration-objects" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration Objects
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Domain Model
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Domain Model
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../domain/lcc-context/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LCC Context
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../domain/person-behavior/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Person Behavior
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../domain/vehicle-physics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Vehicle Physics
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../domain/road-network/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Road Network
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../domain/bus-service/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Bus Service
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../domain/generation-and-lifecycle/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Generation & Lifecycle
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/system-overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    System Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/traffic-model-lifecycle/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TrafficModel Lifecycle
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/agent-taxonomy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent Taxonomy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/data-collection/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Collection
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/tolling-system/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tolling System
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Experiments & Results
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Experiments & Results
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../experiments/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Experiments &amp; Results
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#simulation-hierarchy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Simulation Hierarchy
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#agent-types" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Agent Types
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#person-belief-parameters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Person &amp; Belief Parameters
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#vehicle-driver-parameters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Vehicle &amp; Driver Parameters
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#generation-parameters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Generation Parameters
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tolling-system" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tolling System
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#data-collection-hybriddatacollector" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Data Collection (HybridDataCollector)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#vehicle-dynamics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Vehicle Dynamics
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#trip-output-terms" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Trip Output Terms
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#configuration-objects" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration Objects
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="glossary">Glossary<a class="headerlink" href="#glossary" title="Permanent link">&para;</a></h1>
+<p>A complete reference for domain-specific terminology used throughout the LCC Traffic Model codebase.</p>
+<hr />
+<h2 id="simulation-hierarchy">Simulation Hierarchy<a class="headerlink" href="#simulation-hierarchy" title="Permanent link">&para;</a></h2>
+<dl>
+<dt>Step</dt>
+<dd>One tick of the simulation clock, representing <strong>1 second</strong> of simulated time. Each step executes: toll update, person/bus generation, vehicle physics (speed adjustment + movement), crash generation, blocker tick, and data collection.</dd>
+<dt>Day</dt>
+<dd>A single simulation run within a season. Each day is one <code>TrafficModel</code> execution. Configured via a <code>DayParams</code> object that specifies traffic demand, bus interval, crash rate, and closures for that day.</dd>
+<dt>Season</dt>
+<dd>A sequence of simulated days sharing a <strong>persistent population</strong>. Persons accumulate travel experience and update their beliefs between days. Configured via <code>SeasonConfig</code>, executed by <code>SeasonOrchestrator</code>. Defined in <code>season/</code>.</dd>
+</dl>
+<hr />
+<h2 id="agent-types">Agent Types<a class="headerlink" href="#agent-types" title="Permanent link">&para;</a></h2>
+<dl>
+<dt>SeasonPerson</dt>
+<dd>A <strong>dataclass</strong> (not a Mesa Agent) representing an individual person that persists across all days within a season. Holds core traits (<code>value_of_time</code>, experience weights, priors, decay rates) and accumulates a full history of trips taken. Beliefs about expected travel time for each mode are recomputed between days via <code>update_beliefs_from_history()</code>. Defined in <code>season/persons.py</code>.</dd>
+<dt>TrafficPersonAgent</dt>
+<dd>A <strong>Mesa Agent</strong> created when a person arrives on a given day. Takes a snapshot of its parent <code>SeasonPerson</code>'s beliefs and traits, then chooses a mode (car vs. bus) via <code>decide_mode()</code> using a generalized cost comparison. On trip completion, passes realized trip data back to the <code>SeasonPerson</code> via <code>tp_to_sp_info_pass()</code>. Defined in <code>traffic/agents/traffic_person_agent.py</code>.</dd>
+<dt>CarAgent</dt>
+<dd>A <strong>Mesa Agent</strong> representing a single private vehicle. Extends <code>VehicleAgent</code>. Has randomized driver traits drawn from model-level distributions: <code>acceptable_over</code>, <code>curve_responce</code>, <code>performance</code>, <code>ideal_distance_multiplier</code>. Pays the current road toll at time of creation. Defined in <code>traffic/agents/car_agent.py</code>.</dd>
+<dt>BusAgent</dt>
+<dd>A <strong>Mesa Agent</strong> representing a scheduled transit bus. Extends <code>VehicleAgent</code>. Uses fixed conservative driving parameters: <code>acceptable_over=0</code>, <code>performance=0.1</code>, <code>ideal_distance_multiplier=2</code>, <code>curve_responce=0.9</code>. Passengers board from the <code>model.at_bus_stop</code> queue. Buses do not pay road tolls; instead, each passenger pays the <code>bus_user_fee</code>. Defined in <code>traffic/agents/bus_agent.py</code>.</dd>
+<dt>BlockerAgent</dt>
+<dd>A <strong>Mesa Agent</strong> representing a temporary road obstruction -- either a crash or a canyon closure. Has a <code>self_distruct_timer</code> that counts down each step; the blocker is removed when it reaches zero. On creation and destruction, all vehicles reset their <code>next_agent</code> reference to force re-evaluation of gaps. Defined in <code>traffic/agents/blocker_agent.py</code>.</dd>
+<dt>RoadSegmentAgent</dt>
+<dd>A <strong>Mesa Agent</strong> representing a single waypoint on the road. Properties include <code>speed_limit</code>, <code>curvature</code>, <code>road_section</code>, and <code>distance_traveled</code>. Vehicles use these as <strong>directional targets</strong>, not exclusive occupancy zones -- multiple vehicles can be near the same segment simultaneously. Defined in <code>traffic/agents/road_segment_agent.py</code>.</dd>
+</dl>
+<hr />
+<h2 id="person-belief-parameters">Person &amp; Belief Parameters<a class="headerlink" href="#person-belief-parameters" title="Permanent link">&para;</a></h2>
+<dl>
+<dt>value_of_time</dt>
+<dd>Dollar value per minute of travel time. Used in the generalized cost calculation to convert travel time into a monetary cost. Default distribution: <code>lognorm(s=0.64, scale=40/60)</code> (~$0.67/min median). Defined on <code>PopulationParams</code> in <code>season/configs.py</code>.</dd>
+<dt>experience_weight_car / experience_weight_bus</dt>
+<dd>Multiplier on the travel-time component of generalized cost for each mode. Car default is <code>1.0</code> (scalar). Bus default is drawn from <code>skewnorm(6, loc=1.15, scale=0.3)</code>, reflecting higher perceived disutility of bus travel time. Used in <code>compute_expected_generalized_cost()</code>.</dd>
+<dt>prior_car / prior_bus</dt>
+<dd>Initial expected travel time (minutes) for each mode <strong>before any experience</strong>. Defaults: <code>prior_car=22.0</code>, <code>prior_bus=60.0</code>. Updated slowly after each trip via <code>slow_prior_update(prior, realized_tt, eta=0.05)</code>.</dd>
+<dt>uncertainty_multiplier</dt>
+<dd>Personal risk-aversion factor that scales the travel-time uncertainty penalty in mode choice. In the generalized cost formula, <code>effective_tt = expected_tt - uncertainty_multiplier * uncertainty</code>. Higher values make uncertain modes less attractive. Default: <code>1.0</code>.</dd>
+<dt>time_decay_rate</dt>
+<dd>Exponential decay rate for weighting past experiences. Each observation's weight is <code>exp(-time_decay_rate * age_in_days)</code>. Higher values discount older trips more heavily, creating a shorter memory. Default: <code>0.1</code>.</dd>
+<dt>prior_weight</dt>
+<dd>Strength of the prior relative to observed data when computing expected travel time. The expected travel time blends prior and data: <code>(prior_weight * prior + W * mu_data) / (prior_weight + W)</code> where <code>W</code> is the sum of time-decayed observation weights. Default: <code>1.0</code>.</dd>
+<dt>travel_propensity</dt>
+<dd>Frequency or willingness to make trips. Used in population draw ordering. Default: <code>1.0</code>.</dd>
+<dt>expected_tt_car / expected_tt_bus</dt>
+<dd>A person's current expected travel time (minutes) for each mode. Computed by <code>compute_experience_beliefs()</code> as a weighted average of the prior and exponentially time-decayed past trip observations. Recomputed at the start of each day.</dd>
+<dt>travel_time_uncertainty_car / travel_time_uncertainty_bus</dt>
+<dd>Perceived variability in travel time for each mode. Base uncertainty is <code>1 / total_weight</code> (inversely proportional to experience). Inflated by staleness: <code>base_unc * (1 + staleness_scale * staleness)</code> where <code>staleness</code> is days since the last trip on that mode.</dd>
+</dl>
+<hr />
+<h2 id="vehicle-driver-parameters">Vehicle &amp; Driver Parameters<a class="headerlink" href="#vehicle-driver-parameters" title="Permanent link">&para;</a></h2>
+<dl>
+<dt>acceptable_over</dt>
+<dd>How many mph above the posted speed limit a driver considers acceptable. The driver's <strong>implicit speed limit</strong> is <code>speed_limit + acceptable_over</code>. Drawn from a truncated normal distribution (mean ~3 mph) for cars. Buses use <code>0</code>. Defined in <code>traffic/agents/car_agent.py</code>.</dd>
+<dt>curve_responce</dt>
+<dd>How aggressively a driver slows for road curvature (note: original spelling retained). Drawn from a truncated normal distribution for cars. Buses use <code>0.9</code>. Higher values produce more speed reduction on curves. Defined in <code>traffic/agents/car_agent.py</code>.</dd>
+<dt>performance</dt>
+<dd>A percentile value (0--1) indexing into the acceleration curve cache. Each vehicle gets a unique acceleration function based on this value. Higher percentile = faster acceleration. Buses use <code>0.1</code>. Drawn uniformly for cars via <code>rng.random()</code>. Defined in <code>traffic/agents/car_agent.py</code>.</dd>
+<dt>ideal_distance_multiplier</dt>
+<dd>Multiplier on the baseline desired following distance. Higher values = more cautious following. Drawn from a truncated normal distribution (mean ~1.0) for cars. Buses use <code>2.0</code>. Defined in <code>traffic/agents/car_agent.py</code>.</dd>
+<dt>accel_curve</dt>
+<dd>A function mapping current speed (mph) to acceleration (m/s^2). Generated by <code>build_empirical_accel_function()</code> in <code>vehicle_agent.py</code> using piecewise segments derived from real-world stop-sign acceleration data with skew-normal distributions. The model pre-computes 101 curves (one per integer percentile 0--100) in <code>accel_curve_cache</code>.</dd>
+</dl>
+<hr />
+<h2 id="generation-parameters">Generation Parameters<a class="headerlink" href="#generation-parameters" title="Permanent link">&para;</a></h2>
+<dl>
+<dt>p_generate</dt>
+<dd>Per-step probability of spawning a new person (Bernoulli parameter). Either set directly or derived from <code>traffic_percentile</code> by indexing into the expected counts schedule (ECS). Range: 0--1, where each step represents 1 second.</dd>
+<dt>max_persons</dt>
+<dd>Cap on total persons generated in a day. When the pool is exhausted, the model may continue spawning empty cars to maintain realistic congestion while active bus passengers are still in transit.</dd>
+<dt>traffic_percentile</dt>
+<dd>Selects a column from the expected vehicle counts CSV, controlling demand intensity. For example, 50th percentile = typical day, 90th percentile = heavy day. The selected column provides time-varying <code>p_generate</code> values across the simulation.</dd>
+<dt>season_person_pool</dt>
+<dd>List of pre-allocated <code>SeasonPerson</code> objects ready for assignment to trips. Size is <code>min(population_size, max_persons)</code>. Persons are removed one-by-one as they are assigned to <code>TrafficPersonAgent</code> instances.</dd>
+<dt>at_bus_stop</dt>
+<dd>Queue of <code>TrafficPersonAgent</code> instances waiting for the next bus. Persons who choose bus mode are added here at creation. When a bus spawns, it boards passengers from this queue in FCFS order up to <code>bus_capacity</code>.</dd>
+</dl>
+<hr />
+<h2 id="tolling-system">Tolling System<a class="headerlink" href="#tolling-system" title="Permanent link">&para;</a></h2>
+<dl>
+<dt>TollConfig</dt>
+<dd>Complete toll specification composing a Signal, Transform, and optional wrappers. For static tolls, use <code>TollConfig.static(car=10.0)</code>. For dynamic tolls, provide a <code>signal</code> and <code>transform</code>. Wrappers include <code>rounding</code>, <code>cap</code>, <code>floor</code>, and <code>update_every_n_steps</code>. Resets signal/transform state between days via <code>reset()</code>. Defined in <code>traffic/model/tolling.py</code>.</dd>
+<dt>Signal</dt>
+<dd>A callable that reads model state and returns a numeric value (or <code>None</code> if not ready). Fed into a Transform to determine the toll. Two built-in signals exist: <code>VolumeSignal</code> and <code>FlowSignal</code>.</dd>
+<dt>Transform</dt>
+<dd>A callable that maps a signal value to a raw toll amount. Three built-in transforms exist: <code>PiecewiseLinearTransform</code>, <code>StepTransform</code>, and <code>PITransform</code>.</dd>
+<dt>VolumeSignal</dt>
+<dd>Returns the current number of active vehicles on the road: <code>len(model.vehicles_list)</code>. Always returns a value immediately. Defined in <code>traffic/model/tolling.py</code>.</dd>
+<dt>FlowSignal</dt>
+<dd>Returns a rolling average of vehicle arrivals per step over a configurable window. Default window: <code>300</code> steps (5 minutes at 1 step/sec). Returns <code>None</code> until the window is full. Defined in <code>traffic/model/tolling.py</code>.</dd>
+<dt>PiecewiseLinearTransform</dt>
+<dd><code>toll = base + slope * (signal - threshold)</code> when <code>signal &gt; threshold</code>, else <code>0</code>. Parameters: <code>threshold</code> (default 100), <code>slope</code> (default 0.05), <code>base</code> (default 5.0). Defined in <code>traffic/model/tolling.py</code>.</dd>
+<dt>StepTransform</dt>
+<dd>Binary toll: flat <code>toll</code> amount when <code>signal &gt; threshold</code>, else <code>0</code>. Parameters: <code>threshold</code> (default 100), <code>toll</code> (default 10.0). Defined in <code>traffic/model/tolling.py</code>.</dd>
+<dt>PITransform</dt>
+<dd>Proportional-integral feedback controller that drives the signal toward a <code>target</code>. Toll accumulates when the signal exceeds the target and resets when it falls below (if <code>reset_integral_on_target=True</code>). Includes anti-windup clamping. Parameters: <code>target</code>, <code>kp</code>, <code>ki</code>, <code>toll_min</code>, <code>toll_max</code>. Defined in <code>traffic/model/tolling.py</code>.</dd>
+<dt>current_toll_car</dt>
+<dd>The active toll ($/vehicle) charged to cars at the current step. Updated by <code>update_tolls()</code> each step based on the <code>TollConfig</code>. Attribute on <code>TrafficModel</code>.</dd>
+<dt>bus_user_fee</dt>
+<dd>Fee ($/trip) charged to bus passengers instead of the vehicle toll. Set in <code>SeasonConfig</code>. Default: <code>0.0</code>.</dd>
+</dl>
+<hr />
+<h2 id="data-collection-hybriddatacollector">Data Collection (HybridDataCollector)<a class="headerlink" href="#data-collection-hybriddatacollector" title="Permanent link">&para;</a></h2>
+<dl>
+<dt>HybridCollectorConfig</dt>
+<dd>Configuration dataclass controlling the 4-tier data collection system. Each tier can be independently enabled/disabled with its own cadence and limits. Defined in <code>traffic/model/hybrid_collector.py</code>.</dd>
+<dt>Tier 1 -- Aggregate Metrics</dt>
+<dd>Per-step scalar values and histograms collected at a configurable interval (<code>tier1_interval</code>). Scalars include: step, current toll, vehicle count, active cars/buses, bus riders waiting, mode share, finished count, recent travel time average. Histograms include speed distribution and speed-limit delta. Pre-allocated numpy arrays for performance.</dd>
+<dt>Tier 2 -- Sampled Spatial Data</dt>
+<dd>Agent position and state snapshots at regular intervals (<code>tier2_sample_interval</code>). Captures position, speed, status, gap, ideal gap, and driving action for up to <code>tier2_max_agents_per_sample</code> vehicles per sample. Used for generating animations.</dd>
+<dt>Tier 3 -- Event Log</dt>
+<dd>Discrete event records for crashes and canyon closures. Fields include event type, step, segment index, position, duration, and vehicles on road at the time. Always lightweight.</dd>
+<dt>Tier 4 -- Full Snapshots</dt>
+<dd>Complete model state dumps at configurable intervals or on crash events. Disabled by default (<code>tier4_enabled=False</code>) to prevent memory bloat. Limited by <code>tier4_max_snapshots</code>.</dd>
+<dt>collect_every_n</dt>
+<dd>How often to collect Tier 2 spatial data, in steps. Default: <code>10</code>. Higher values reduce memory usage and animation resolution.</dd>
+</dl>
+<hr />
+<h2 id="vehicle-dynamics">Vehicle Dynamics<a class="headerlink" href="#vehicle-dynamics" title="Permanent link">&para;</a></h2>
+<dl>
+<dt>gap</dt>
+<dd>Current following distance in meters to the next entity ahead (vehicle or blocker). Determines whether gap-based braking (prevent-pass) is triggered.</dd>
+<dt>ideal_gap</dt>
+<dd>Desired following distance in meters, based on current speed and <code>ideal_distance_multiplier</code>. When <code>gap &lt; ideal_gap</code>, the vehicle begins braking.</dd>
+<dt>driving_action</dt>
+<dd>Encoded integer describing the vehicle's current acceleration/deceleration state: accelerate (0), coast (1), slow_accel (2), speed_limit_brake (3), smooth_brake (4), prevent_pass (5).</dd>
+<dt>status</dt>
+<dd>Vehicle operational state: driving (0), slowing (1), crash (2), canyon_closure (3), arrived (4).</dd>
+<dt>implicit_sl</dt>
+<dd>The driver's personal speed limit: <code>posted_speed_limit + acceptable_over</code>. The vehicle brakes when exceeding this value and accelerates when below it.</dd>
+<dt>cumtime_lost</dt>
+<dd>Cumulative seconds a vehicle spends below a threshold speed due to congestion or braking. Measures delay attributable to traffic conditions rather than road geometry.</dd>
+</dl>
+<hr />
+<h2 id="trip-output-terms">Trip Output Terms<a class="headerlink" href="#trip-output-terms" title="Permanent link">&para;</a></h2>
+<dl>
+<dt>realized_tt</dt>
+<dd>Total travel time for a completed trip in minutes. Equals <code>wait_time + onboard_time</code>. Recorded to the <code>SeasonPerson</code>'s history for belief updating.</dd>
+<dt>realized_cost</dt>
+<dd>Generalized cost of the completed trip in dollars. Calculated as <code>(total_travel_time * value_of_time * experience_weight) + toll_paid</code>.</dd>
+<dt>wait_time</dt>
+<dd>Minutes between person creation and vehicle boarding. For car drivers, this is typically near zero. For bus riders, this reflects time spent at the bus stop.</dd>
+<dt>onboard_time</dt>
+<dd>Minutes from boarding (vehicle departure) to arrival at destination. Calculated as <code>(arrive_step - board_step) / 60</code>.</dd>
+<dt>toll_paid</dt>
+<dd>Total toll charged for the trip in dollars. For cars: the <code>current_toll_car</code> at time of vehicle creation. For bus passengers: the <code>bus_user_fee</code>.</dd>
+<dt>cumtime_lost_sec</dt>
+<dd>Cumulative delay in seconds, transferred from the vehicle to the <code>TrafficPersonAgent</code> at trip completion. Converted to minutes as <code>cumtime_lost_min</code> when recorded to the <code>SeasonPerson</code>.</dd>
+</dl>
+<hr />
+<h2 id="configuration-objects">Configuration Objects<a class="headerlink" href="#configuration-objects" title="Permanent link">&para;</a></h2>
+<dl>
+<dt>SeasonConfig</dt>
+<dd>Master configuration object for a multi-day season run. Contains season-level <code>TrafficModel</code> parameters (<code>max_steps</code>, <code>max_persons</code>, <code>collect_every_n</code>, <code>start_hr</code>, <code>bus_capacity</code>), road/data paths, toll configuration, per-day parameters (<code>day_params</code> list), population parameters, and collector configuration. Created by <code>make_season_config()</code>. Defined in <code>season/configs.py</code>.</dd>
+<dt>DayParams</dt>
+<dd>Per-day parameter specification containing <code>day_index</code>, <code>day_seed</code>, <code>traffic_percentile</code>, <code>bus_interval</code>, <code>crashes_per_100k_vmt_input</code>, and optional <code>canyon_closures</code>. Converted to <code>TrafficModel</code> keyword arguments via <code>to_model_kwargs()</code>. Defined in <code>season/configs.py</code>.</dd>
+<dt>PopulationParams</dt>
+<dd>Defines distributions for drawing <code>SeasonPerson</code> traits. Each field (e.g., <code>value_of_time</code>, <code>experience_weight_bus</code>) can be a scalar or a frozen scipy distribution with a <code>.rvs()</code> method. Generates the full population via <code>create_season_persons()</code>. Defined in <code>season/configs.py</code>.</dd>
+<dt>ScheduleSpecs</dt>
+<dd>Specifies how a day-varying parameter is realized across days within a season. Three modes: <code>static</code> (same value each day), <code>dist</code> (random draw from a scipy distribution each day), <code>list</code> (explicit per-day values). Realized via <code>realize(rng, n_days)</code>. Defined in <code>season/configs.py</code>.</dd>
+<dt>make_season_config()</dt>
+<dd>Factory function that assembles a <code>SeasonConfig</code> from high-level inputs. Takes schedule specs, realizes per-day values, builds the <code>DayParams</code> list, and returns a complete <code>SeasonConfig</code>. Defined in <code>season/configs.py</code>.</dd>
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.suggest", "search.highlight", "content.code.copy"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
