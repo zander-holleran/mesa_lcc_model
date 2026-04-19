@@ -38,8 +38,8 @@ def _get_git_commit_short() -> str:
 class SeasonOrchestrator:
     """Run a series of daily simulations and persist their outputs."""
 
-    def __init__(self, season_config: SeasonConfig, store_data: bool = False,
-                 output_root_dir: str = "data/season_outputs", silent: bool = False):
+    def __init__(self, season_config: SeasonConfig,
+                 output_root_dir: str = "data/outputs/seasons", silent: bool = False):
         self.config = season_config
         self.silent = silent
 
@@ -48,21 +48,18 @@ class SeasonOrchestrator:
 
         self.season_persons = self.config.population_params.create_season_persons(
             season_id=self.config.season_id,
-            seed=self.config.seed,   
+            seed=self.config.seed,
         )
-        
+
         self.rng = np.random.default_rng(self.config.seed)
 
-        # define output directory for this season
-        self.store_data = store_data
-        self.output_dir = None
-        if store_data:
-            self.output_dir = Path(output_root_dir) / self.config.season_id
-            if self.output_dir.exists():
-                shutil.rmtree(self.output_dir)
-            self.output_dir.mkdir(parents=True)
-            if not self.silent:
-                print(f"Season outputs will be saved to: {self.output_dir}")
+        # always create output directory for this season
+        self.output_dir = Path(output_root_dir) / self.config.season_id
+        if self.output_dir.exists():
+            shutil.rmtree(self.output_dir)
+        self.output_dir.mkdir(parents=True)
+        if not self.silent:
+            print(f"Season outputs will be saved to: {self.output_dir}")
 
         self.last_model_run = None
         self._next_day_ix = 0
@@ -88,14 +85,12 @@ class SeasonOrchestrator:
         self._wall_time = time.perf_counter() - t0
         self.season_summary = self._compute_season_summary()
 
-        if self.store_data:
-            self._save_config()
-            self._save_season_summary(self.season_summary)
-
-            self._save_df_if_exists(self.get_trip_log_df(), "trip_log.parquet")
-            self._save_df_if_exists(self.get_day_summary_df(), "day_summary.parquet")
-            self._save_df_if_exists(self.get_season_person_log_df(), "season_person_log.parquet")
-            self._save_df_if_exists(self.get_sp_day_summary_df(), "sp_day_summary.parquet")
+        self._save_config()
+        self._save_season_summary(self.season_summary)
+        self._save_df_if_exists(self.get_trip_log_df(), "trip_log.parquet")
+        self._save_df_if_exists(self.get_day_summary_df(), "day_summary.parquet")
+        self._save_df_if_exists(self.get_season_person_log_df(), "season_person_log.parquet")
+        self._save_df_if_exists(self.get_sp_day_summary_df(), "sp_day_summary.parquet")
 
         
 
@@ -144,8 +139,7 @@ class SeasonOrchestrator:
         self._compute_day_summary(day_index)
         _ = self.compute_sp_day_summary(day_index)            
 
-        if self.store_data:
-            self._save_datacollector_outputs(day_index, tm)
+        self._save_datacollector_outputs(day_index, tm)
 
         return tm
     
@@ -193,7 +187,7 @@ class SeasonOrchestrator:
 
             # irrelevant for season runs
             p_generate=None,
-            hybrid_collector_config=self.config.hybrid_collector_config,
+            data_collection_config=self.config.data_collection,
             silent=self.silent,
         )
 #-----------------------------------------------------------------------------  
@@ -201,20 +195,22 @@ class SeasonOrchestrator:
 #-----------------------------------------------------------------------------
     def _save_datacollector_outputs(self, day_index, tm):
         prefix = f"day_{day_index}"
+        dc = tm.datacollector
 
-        # Tier 1: Aggregate metrics (model time series)
-        tier1_df = tm.datacollector.get_tier1_dataframe()
-        tier1_df.to_parquet(self.output_dir / f"{prefix}_model_ts.parquet")
+        if dc.tier1:
+            tier1_df = dc.get_tier1_dataframe()
+            if not tier1_df.empty:
+                tier1_df.to_parquet(self.output_dir / f"{prefix}_model_ts.parquet")
 
-        # Tier 2: Spatial data for animations
-        tier2_df = tm.datacollector.get_tier2_dataframe()
-        if not tier2_df.empty:
-            tier2_df.to_parquet(self.output_dir / f"{prefix}_spatial.parquet")
+        if dc.tier2:
+            tier2_df = dc.get_tier2_dataframe()
+            if not tier2_df.empty:
+                tier2_df.to_parquet(self.output_dir / f"{prefix}_spatial.parquet")
 
-        # Tier 3: Events (crashes, closures)
-        events_df = tm.datacollector.get_events_dataframe()
-        if not events_df.empty:
-            events_df.to_parquet(self.output_dir / f"{prefix}_events.parquet")
+        if dc.tier3:
+            events_df = dc.get_events_dataframe()
+            if not events_df.empty:
+                events_df.to_parquet(self.output_dir / f"{prefix}_events.parquet")
 
 
 
@@ -505,35 +501,12 @@ class SeasonOrchestrator:
         return summary
 
     def _save_season_summary(self, season_summary: dict):
-        # season_id is already included in the summary dict
-
-        # 1) per-season parquet in outputs/{season_id}/
         self.output_dir.mkdir(parents=True, exist_ok=True)
         parquet_path = self.output_dir / "season_summary.parquet"
         pd.DataFrame([season_summary]).to_parquet(parquet_path, index=False)
 
-        # 2) append to data/season_summary_log.csv, expanding columns as needed
-        data_dir = Path("data")
-        data_dir.mkdir(parents=True, exist_ok=True)
-        csv_path = data_dir / "season_summary_log.csv"
-
-        if csv_path.exists():
-            df = pd.read_csv(csv_path)
-
-            existing_cols = list(df.columns)
-            new_cols = [k for k in season_summary.keys() if k not in existing_cols]
-            df = df.reindex(columns=existing_cols + new_cols)
-
-            df.loc[len(df)] = {c: season_summary.get(c, None) for c in df.columns}
-        else:
-            df = pd.DataFrame([season_summary])
-
-        df.to_csv(csv_path, index=False)
-
     def _save_config(self):
         """Persist the SeasonConfig object next to other outputs."""
-        if self.output_dir is None:
-            return
         self.output_dir.mkdir(parents=True, exist_ok=True)
         config_path = self.output_dir / "season_config.json"
 

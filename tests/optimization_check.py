@@ -26,6 +26,7 @@ Usage:
 """
 
 import time
+import tempfile
 import pandas as pd
 import sys
 from pathlib import Path
@@ -33,6 +34,7 @@ from pathlib import Path
 
 from season.season_orchestrator import SeasonOrchestrator
 from season.configs import make_season_config, PopulationParams, ScheduleSpecs
+from traffic.model.hybrid_collector import DataCollectionConfig, Tier1Config
 
 # Baseline file paths
 BASELINE_DIR = Path(__file__).parent / "baselines"
@@ -58,6 +60,7 @@ def get_config():
         bus_interval_schedule=ScheduleSpecs("static", 4),
         crashes_schedule=ScheduleSpecs("static", 5),
         population_params=PopulationParams(population_size=1000),
+        data_collection=DataCollectionConfig(tier1=Tier1Config()),
     )
 
 
@@ -66,12 +69,12 @@ def run_model():
     config = get_config()
 
     start = time.perf_counter()
-    orch = SeasonOrchestrator(config, store_data=False)
+    orch = SeasonOrchestrator(config, output_root_dir=tempfile.mkdtemp(), silent=True)
     orch.run_day()
     elapsed = time.perf_counter() - start
 
     model = orch.last_model_run
-    model_ts = model.datacollector.get_model_vars_dataframe()
+    model_ts = model.datacollector.get_tier1_dataframe()
     trip_log = orch.get_trip_log_df()
 
     meta = {

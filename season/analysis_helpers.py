@@ -13,7 +13,7 @@ import numpy as np
 from pprint import pprint
 
 #============================================ LOAD DATA ============================================
-BASE_DIR = Path('data/season_outputs')
+BASE_DIR = Path('data/outputs/seasons')
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 RUN_DATA_ITEM_TITLES = {
     'season_summary': 'Season Summary - one row per SEASON, with aggregate metrics',
@@ -263,7 +263,7 @@ def plot_realized_cost_boxplots(trip_log):
     plt.show()
 
 
-def _load_start_hr(run_id: str, output_root: str = "data/season_outputs") -> int:
+def _load_start_hr(run_id: str, output_root: str = "data/outputs/seasons") -> int:
     config_path = Path(output_root) / run_id / "season_config.json"
     if config_path.exists():
         with config_path.open() as f:
@@ -279,7 +279,7 @@ def _fmt_hour(h: float) -> str:
     return f"{display} {suffix}"
 
 
-def plot_model_ts_interactive(model_ts, run_id: str, output_root: str = "data/season_outputs"):
+def plot_model_ts_interactive(model_ts, run_id: str, output_root: str = "data/outputs/seasons"):
     start_hr = _load_start_hr(run_id, output_root)
 
     dfs = []
@@ -366,7 +366,7 @@ def plot_model_ts_interactive(model_ts, run_id: str, output_root: str = "data/se
 def plot_single_day_metrics(
     model_ts,
     run_id: str,
-    output_root: str = "data/season_outputs",
+    output_root: str = "data/outputs/seasons",
     default_metrics: list[str] | None = None,
 ):
     """Plot multiple metrics for a single day, with a slider to select the day."""

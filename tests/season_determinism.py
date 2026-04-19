@@ -16,6 +16,7 @@ Usage:
 
 import pandas as pd
 import sys
+import tempfile
 from pathlib import Path
 
 
@@ -59,7 +60,7 @@ def run_season_determinism_test(seed: int = 12345, verbose: bool = True) -> bool
     # Run 1
     if verbose:
         print("Running season (run 1)...")
-    orch1 = SeasonOrchestrator(config, store_data=False)
+    orch1 = SeasonOrchestrator(config, output_root_dir=tempfile.mkdtemp(), silent=True)
     orch1.run_season()
 
     trip_log1 = orch1.get_trip_log_df()
@@ -72,7 +73,7 @@ def run_season_determinism_test(seed: int = 12345, verbose: bool = True) -> bool
     # Run 2
     if verbose:
         print("Running season (run 2)...")
-    orch2 = SeasonOrchestrator(config, store_data=False)
+    orch2 = SeasonOrchestrator(config, output_root_dir=tempfile.mkdtemp(), silent=True)
     orch2.run_season()
 
     trip_log2 = orch2.get_trip_log_df()

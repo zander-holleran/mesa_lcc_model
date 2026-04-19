@@ -19,7 +19,7 @@ import traffic.utils.distribution_utils as du
 # import other parts of model
 import traffic.model.generate as gen
 import traffic.model.init_helpers as ih
-from traffic.model.hybrid_collector import HybridDataCollector, HybridCollectorConfig
+from traffic.model.hybrid_collector import HybridDataCollector, DataCollectionConfig
 from collections import defaultdict
 
 
@@ -35,7 +35,7 @@ class TrafficModel(Model):
                  bus_user_fee: float = 0.0,
                  season_persons=None,
                  current_day = 0,
-                 hybrid_collector_config: HybridCollectorConfig = None,
+                 data_collection_config: DataCollectionConfig = None,
                  max_concurrent_vehicles: int = 5000,
                  silent: bool = False,
                  ):
@@ -135,10 +135,8 @@ class TrafficModel(Model):
         self.vid_to_vehicle: dict[int, object] = {}  # vid → VehicleAgent shell
 
         # set up the hybrid data collector using the provided config or fall back to defaults
-        collector_config = hybrid_collector_config or HybridCollectorConfig(
-            max_steps=max_steps,
-        )
-        self.datacollector = HybridDataCollector(collector_config)
+        dc = data_collection_config or DataCollectionConfig()
+        self.datacollector = HybridDataCollector(dc, max_steps=max_steps)
 
         # agent lists
         self.vehicles_list = []
