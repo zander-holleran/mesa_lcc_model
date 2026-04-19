@@ -53,16 +53,53 @@ The base 1700 pc/h assumes ideal conditions (level terrain, no HV, standard lane
 | 20–25 veh/km (32–40 veh/mi) | [p.8](25179.pdf#page=17) (Finnish studies) | Two-lane highway | Field-measured |
 | LOS E boundary: 40 veh/km (64 veh/mi) | [Table 2-3, p.14](25179.pdf#page=23) (German HBS 2001) | Two-lane, density as service measure | Policy threshold |
 | Follower density at LOS D/E boundary: 12.0 followers/mi/ln (high-speed), 15.0 (low-speed) | [Table 3-23, p.87](25179.pdf#page=96) (Washburn et al. 2018) | Two-lane highways | Simulation-derived |
+| Implied k_0 from capacity/FFS: 700–1400 / 35–55 ≈ 13–40 veh/mi | Derivable from [Eq 3-5, p.67](25179.pdf#page=76) and Section 1.2.7 | SR-210 estimate | Derived |
+| German HBS speed-flow curves show capacity at ~800–1400 veh/h depending on HV% | [Figure 2-12, p.46](25179.pdf#page=55) (HBS 2015) | Two-lane, grade class 1 | Empirical curves |
 
 ### SR-210 Interpretation
 
-The Finnish field data places optimum density at 20–25 veh/km = 32–40 veh/mi, which aligns with the current k_0 range of 15–40 veh/mi. For SR-210's constrained geometry, the lower end is more plausible.
+The Finnish field data places optimum density at 20–25 veh/km = 32–40 veh/mi for generic two-lane highways ([Section 1.2.7, p.8](25179.pdf#page=17): "As traffic density exceeds optimum density (approximately 20–25 veh/km) the maximum flow rate is approximately 300–400 pc/h lower than capacity"). This is the density at which flow peaks — exactly the physical meaning of k_0 in the Underwood model.
 
-**Conclusion:** **Recommended narrowing: 20–35 veh/mi.**
+For SR-210, the optimum density should be **lower** than the generic two-lane value because:
+- Steep grades (up to 11%) cause platoons to form at lower densities, reaching capacity sooner.
+- The German HBS LOS E boundary of 40 veh/km = 64 veh/mi ([Table 2-3, p.14](25179.pdf#page=23)) represents near-capacity operation, suggesting k_0 should be well below 64 veh/mi.
+- From the NCHRP speed model ([Eq 3-5, p.67](25179.pdf#page=76)), ATS = FFS at flows below 100 veh/h, meaning the free-flow regime is narrow. With SR-210 capacity estimated at 700–1400 veh/hr and capacity speeds of 25–40 mph, k_0 = capacity/speed ≈ 18–56 veh/mi, with the lower end more plausible for steeper segments.
+
+**Conclusion:** **Recommended range: 15–50 veh/mi.** The Finnish field optimum of 32–40 veh/mi anchors the mid-range for generic two-lane highways, but SR-210's extreme grades justify the lower bound extending to ~15 veh/mi.
 
 ---
 
-## 4. Jam Density (k_j)
+## 4. Speed Constant (v_0) — Greenberg Model
+
+The Greenberg model defines v = v_0 × ln(k_j / k), where v_0 is the speed at which flow is maximized (i.e., the speed at capacity). NCHRP 17-65 does not use the Greenberg model, but several passages constrain what v_0 should be for a two-lane highway like SR-210.
+
+| Value / Implied Range | Source | Derivation |
+|---|---|---|
+| ~30 mph (mixed-flow speed at capacity, 5-mi 6% upgrade, 30% trucks) | [Figure 2-11, p.43](25179.pdf#page=52) (Dowling et al. 2014) | Speed-flow curve shows capacity speed dropping to ~25–35 mph on steep upgrades with heavy vehicles |
+| S_calib,cap (speed at capacity) in mixed-flow model | [Eq 2-14, p.47](25179.pdf#page=56) | Defines the speed at which flow reaches capacity — directly analogous to v_0 |
+| ATS at capacity ≈ FFS − m × (v_d − 0.1)^p | [Eq 3-5, p.67](25179.pdf#page=76) | At capacity flow (~700–1400 veh/hr for SR-210), ATS drops well below FFS |
+| Speed at LOS E: ~40–50 km/h (25–31 mph) for grade class 3–4, 10–20% HV | [Figure 2-12, p.46](25179.pdf#page=55) (German HBS 2015) | Speed-flow curves for severe vertical alignment show capacity speeds of 25–35 mph |
+| Truck crawl speeds on 8–10% grades: 22–30 mph | [Figures 3-3 to 3-5, pp.79–80](25179.pdf#page=88) | On SR-210's steepest grades, heavy vehicles set a speed floor that constrains the entire traffic stream |
+| Finnish highway speed at ~1400 veh/h: ~60–70 km/h (37–43 mph) | [Figure 1-5, p.9](25179.pdf#page=18) (Luttinen et al. 2005) | Speed at near-capacity flow on a flat two-lane highway — upper bound for v_0 |
+| Implied from q_max and k_j: v_0 = q_max × e / k_j | Derivable from Greenberg critical point | With q_max = 700–1400 veh/hr and k_j = 60–150 veh/mi → v_0 = 13–63 mph; constrained by grade to lower half |
+
+### SR-210 Interpretation
+
+The Greenberg v_0 parameter represents the speed at maximum flow (capacity). For SR-210, several NCHRP evidence lines converge:
+
+**Lower bound (~10–15 mph):** On the steepest SR-210 segments (9–11% grade), truck crawl speeds of 22–25 mph ([Figures 3-3 to 3-5, pp.79–80](25179.pdf#page=88)) set a ceiling for the traffic stream in no-passing zones. With passenger cars unable to pass, the mixed-flow speed at capacity approaches truck crawl speed. Figure 2-11 ([p.43](25179.pdf#page=52)) shows this effect explicitly: on a 5-mile 6% upgrade with 30% trucks, the mixed-flow speed-flow pattern shows capacity speed of ~25–30 mph. SR-210 has steeper grades and heavier no-passing constraints, pushing v_0 lower.
+
+**Upper bound (~35–40 mph):** The Finnish field data ([Figure 1-5, p.9](25179.pdf#page=18)) shows speed at near-capacity flow (~1400 veh/h) of ~60–70 km/h (37–43 mph) on a flat two-lane highway. This represents the maximum plausible v_0 for any two-lane highway. SR-210's grades ensure v_0 is well below this.
+
+**Mid-range (~20–30 mph):** The German HBS speed-flow curves ([Figure 2-12, p.46](25179.pdf#page=55)) show that for grade class 3–4 with 10–20% heavy vehicles, speed at capacity falls to approximately 40–50 km/h (25–31 mph). SR-210's Vertical Class 5 geometry (grades > 9%, [Table 2-14, p.57](25179.pdf#page=66)) is more severe than the HBS grade classes shown, further reducing v_0.
+
+**Cross-check from Greenberg critical point:** q_max = v_0 × k_j / e. With SR-210 capacity of 700–1400 veh/hr (Section 2) and k_j of 60–150 veh/mi (Section 5): v_0 = q_max × e / k_j = (700–1400) × 2.718 / (60–150) ≈ 13–63 mph. The physically plausible subset (given grade constraints) is the lower half of this range.
+
+**Conclusion:** **Recommended range: 10–35 mph.** The lower bound reflects SR-210's steepest segments where truck crawl speeds dominate; the upper bound reflects capacity speed on gentler lower sections. The literature Greenberg calibrations (Drake: 32.8 mph on a flat expressway; Lu & Meng Beijing: 19.1 mph; Lu & Meng JJT: 29.2 mph) bracket this range.
+
+---
+
+## 5. Jam Density (k_j)
 
 NCHRP 17-65 does **not** use classical speed-density models (Greenshields/Greenberg/Underwood) and does not report jam density directly. Indirect evidence:
 
@@ -80,7 +117,7 @@ For a low-speed two-lane highway, if capacity speed is ~25–35 mph and capacity
 
 ---
 
-## 5. Truck Upgrade Speed Curves
+## 6. Truck Upgrade Speed Curves
 
 From [Figures 3-3 to 3-5, pp.79–80](25179.pdf#page=88) and [Equation 3-20, p.81](25179.pdf#page=90):
 
@@ -101,7 +138,7 @@ These are directly usable for calibrating heavy vehicle and bus behavior in the 
 
 ---
 
-## 6. Vertical Alignment Classification for SR-210
+## 7. Vertical Alignment Classification for SR-210
 
 From [Table 2-14, p.57](25179.pdf#page=66): SR-210 segments with grades >9% and segment lengths >0.3 mi classify as **Vertical Class 5** (most severe). This is the highest grade classification in the NCHRP methodology, meaning the steepest FFS-HV% slope coefficients from [Table 3-1, p.66](25179.pdf#page=75) apply:
 
@@ -127,7 +164,7 @@ The speed-flow slope coefficients for Vertical Class 5 from [Table 3-2, p.69](25
 
 ---
 
-## 7. Speed-Flow Relationship Shape
+## 8. Speed-Flow Relationship Shape
 
 The report confirms that the speed-flow relationship for two-lane highways is **concave-up**, not linear as assumed in HCM 2010 ([Section 1.2.1, p.2](25179.pdf#page=11); [Section 4.1.2, p.91](25179.pdf#page=100)). This is consistent with the Greenberg and Underwood model shapes used in the benchmark notebook.
 
@@ -150,7 +187,8 @@ For flow rates < 100 veh/h, ATS = FFS (speed is unaffected by traffic). This pro
 |---|---|---|---|---|
 | v_f (mph) | 34–40 | **34–40** | Confirmed | HCM BFFS rule + grade/curve corrections ([p.7](25179.pdf#page=16), [p.66](25179.pdf#page=75)) |
 | k_j (veh/mi) | 50–250 | **60–150** | Narrowed | German HBS LOS F > 64 veh/mi ([Table 2-3, p.14](25179.pdf#page=23)); Greenshields k_j=2k_c derivation |
-| k_0 (veh/mi) | 15–40 | **20–35** | Narrowed | Finnish field data ~32–40 veh/mi ([p.8](25179.pdf#page=17)) |
+| k_0 (veh/mi) | 15–40 | **15–50** | Widened high end | Finnish field optimum 32–40 veh/mi ([p.8](25179.pdf#page=17)); SR-210 grade constraints lower the low end |
+| v_0 (mph) | — | **10–35** | New | Mixed-flow speed at capacity on steep upgrades ([Fig 2-11, p.43](25179.pdf#page=52)); truck crawl speeds ([Figs 3-3–3-5, pp.79–80](25179.pdf#page=88)); German HBS grade-class curves ([Fig 2-12, p.46](25179.pdf#page=55)) |
 | Capacity (veh/hr/dir) | 600–2,000 | **700–1,400** | Narrowed | HCM base 1700 pc/h ([p.8](25179.pdf#page=17)) degraded by grade/HV; German HBS ([Fig 2-12, p.46](25179.pdf#page=55)) |
 
 ---

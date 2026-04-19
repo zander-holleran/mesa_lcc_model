@@ -18,7 +18,7 @@ def greenshields(k, v_f, k_j):
     """Greenshields (1935): linear speed-density.
     k, k_j in veh/mi; v_f in mph. Returns speed in mph.
     """
-    return v_f * (1.0 - k / k_j)
+    return np.clip(v_f * (1.0 - k / k_j), 0, None)
 
 
 def greenberg(k, v_0, k_j):
@@ -37,28 +37,6 @@ def underwood(k, v_f, k_0):
     """
     return v_f * np.exp(-np.asarray(k, dtype=float) / k_0)
 
-# --- derived critical-point functions ---
-
-def greenshields_critical(v_f, k_j):
-    """Returns (k_c veh/mi, q_max veh/hr)."""
-    k_c   = k_j / 2.0
-    q_max = v_f * k_j / 4.0
-    return k_c, q_max
-
-
-def greenberg_critical(v_0, k_j):
-    """Returns (k_c veh/mi, q_max veh/hr)."""
-    k_c   = k_j / np.e
-    q_max = v_0 * k_c
-    return k_c, q_max
-
-
-def underwood_critical(v_f, k_0):
-    """Returns (k_c veh/mi, q_max veh/hr)."""
-    k_c   = k_0
-    q_max = v_f * k_0 / np.e
-    return k_c, q_max
-
 #===================================================================
 # Unit conversions
 #===================================================================
@@ -68,9 +46,7 @@ VEHKM_TO_VEHMI = 1.60934       # veh/km → veh/mi (multiply by 1.60934)
 METERS_PER_MILE = 1609.34
 
 def kmh_to_mph(v):   return v * KMH_TO_MPH
-def mph_to_kmh(v):   return v / KMH_TO_MPH
 def vehkm_to_vehmi(k): return k * VEHKM_TO_VEHMI
-def vehmi_to_vehkm(k): return k / VEHKM_TO_VEHMI
 
 def convert_to_imperial(entry):
     """Return a copy of entry with speed in mph and density in veh/mi."""
@@ -314,15 +290,72 @@ def sensitivity_plot_1param(ax, model_fn, param_grid, fixed_kwargs,
     ax.set_xlim(0, k_range.max())
 
 
-def plot_kv_ci_from_engineering(engineering, k_range=None, n_mc=2000, seed=42,
-                                ci_alpha=0.20, grid_alpha=0.3, save_path=None):
-    """Plot 3-panel k-v CI figure directly from engineering estimate ranges.
+def ci_bands_from_ranges(ranges, k_range=None, n_mc=2000, seed=42):
+    """Compute CI bands for all three models from engineering-style range dicts.
 
     Parameters
     ----------
-    engineering : dict
-        Parameter ranges as {param_name: (lo, hi)}, e.g.
-        {"v_f": (34, 37), "k_j": (100, 160), "v_0": (20, 35), "k_0": (15, 30)}.
+    ranges : dict
+        {param_name: (lo, hi)}, e.g. {"v_f": (34, 40), "k_j": (50, 250), ...}.
+    k_range : array-like or None
+        Density values. Defaults to linspace(0.5, 250, 500).
+
+    Returns dict: {"greenshields": (mean, lo, hi), "greenberg": ..., "underwood": ...}
+    """
+    if k_range is None:
+        k_range = np.linspace(0.5, 250, 500)
+
+    def _dist(key):
+        lo, hi = ranges[key]
+        return UniformDist(lo, hi)
+
+    models = [
+        ("greenshields", greenshields, [_dist("v_f"), _dist("k_j")]),
+        ("greenberg",    greenberg,    [_dist("v_0"), _dist("k_j")]),
+        ("underwood",    underwood,    [_dist("v_f"), _dist("k_0")]),
+    ]
+    return {
+        key: mc_ci_band(fn, dists, k_range, n_mc=n_mc, seed=seed)
+        for key, fn, dists in models
+    }
+
+
+def ci_bands_from_dists(param_dists, k_range=None, n_mc=2000, seed=42):
+    """Compute CI bands from a param_dists dict (output of lit_param_dists).
+
+    Parameters
+    ----------
+    param_dists : dict
+        {model_key: {param_name: dist_object}}, e.g. from lit_param_dists().
+    k_range : array-like or None
+        Density values. Defaults to linspace(0.5, 250, 500).
+
+    Returns dict: {"greenshields": (mean, lo, hi), ...}
+    """
+    if k_range is None:
+        k_range = np.linspace(0.5, 250, 500)
+
+    models = [
+        ("greenshields", greenshields, ["v_f", "k_j"]),
+        ("greenberg",    greenberg,    ["v_0", "k_j"]),
+        ("underwood",    underwood,    ["v_f", "k_0"]),
+    ]
+    return {
+        key: mc_ci_band(fn, [param_dists[key][p] for p in pnames],
+                        k_range, n_mc=n_mc, seed=seed)
+        for key, fn, pnames in models
+    }
+
+
+def plot_kv_ci_figure(param_dists, k_range=None, n_mc=2000, seed=42,
+                      ci_alpha=0.20, grid_alpha=0.3, save_path=None):
+    """Plot 3-panel k-v CI figure from parameter distributions.
+
+    Parameters
+    ----------
+    param_dists : dict
+        {model_key: {param_name: dist_object}}, e.g. from lit_param_dists().
+        Each dist must have a .sample(rng) method (UniformDist, GaussianDist).
     k_range : array-like or None
         Density values (veh/mi). Defaults to linspace(0.5, 250, 500).
     n_mc, seed : int
@@ -333,27 +366,23 @@ def plot_kv_ci_from_engineering(engineering, k_range=None, n_mc=2000, seed=42,
     if k_range is None:
         k_range = np.linspace(0.5, 250, 500)
 
-    def _dist(key):
-        lo, hi = engineering[key]
-        return UniformDist(lo, hi)
-
-    # model_fn, param dists (in positional order), panel config
     panels = [
-        (greenshields, [_dist("v_f"), _dist("k_j")],
+        ("greenshields", greenshields, ["v_f", "k_j"],
          "Greenshields (1935)", "#2196F3", (0, 95)),
-        (greenberg, [_dist("v_0"), _dist("k_j")],
+        ("greenberg", greenberg, ["v_0", "k_j"],
          "Greenberg (1959)", "#E91E63", (0, 110)),
-        (underwood, [_dist("v_f"), _dist("k_0")],
+        ("underwood", underwood, ["v_f", "k_0"],
          "Underwood (1961)", "#4CAF50", (0, 95)),
     ]
 
     fig, axes = plt.subplots(1, 3, figsize=(18, 6), sharey=False)
 
-    for ax, (model_fn, dists, title, color, ylim) in zip(axes, panels):
+    for ax, (key, model_fn, pnames, title, color, ylim) in zip(axes, panels):
+        dists = [param_dists[key][p] for p in pnames]
         v_mean, v_lo, v_hi = mc_ci_band(model_fn, dists, k_range,
                                          n_mc=n_mc, seed=seed)
         ax.fill_between(k_range, v_lo, v_hi, alpha=ci_alpha, color=color,
-                        label="95% CI (engineering est.)")
+                        label="95% CI")
         ax.plot(k_range, v_mean, color=color, lw=2.2, label="Mean curve")
         ax.set_xlabel("Density (k) (veh/mi)", fontsize=10)
         ax.set_title(title, fontsize=11, fontweight="bold")
@@ -368,13 +397,26 @@ def plot_kv_ci_from_engineering(engineering, k_range=None, n_mc=2000, seed=42,
 
     fig.suptitle(
         "Speed-Density (k\u2013v) Fundamental Diagram\n"
-        "Engineering Estimate Uncertainty \u2014 95% CI",
+        "Literature Parameter Uncertainty \u2014 95% CI",
         fontsize=13, fontweight="bold",
     )
     fig.tight_layout()
     if save_path:
         fig.savefig(save_path, dpi=150, bbox_inches="tight")
     return fig, axes
+
+
+def plot_kv_ci_from_engineering(engineering, **kwargs):
+    """Thin wrapper: convert engineering ranges to dists, call plot_kv_ci_figure."""
+    param_dists = {
+        "greenshields": {"v_f": UniformDist(*engineering["v_f"]),
+                         "k_j": UniformDist(*engineering["k_j"])},
+        "greenberg":    {"v_0": UniformDist(*engineering["v_0"]),
+                         "k_j": UniformDist(*engineering["k_j"])},
+        "underwood":    {"v_f": UniformDist(*engineering["v_f"]),
+                         "k_0": UniformDist(*engineering["k_0"])},
+    }
+    return plot_kv_ci_figure(param_dists, **kwargs)
 
 
 def plot_kv_ci_comparison(k, lit_ci_bands, sim_ci_bands,
@@ -407,12 +449,16 @@ def plot_kv_ci_comparison(k, lit_ci_bands, sim_ci_bands,
         ax.plot(k, lit_mean, color=lit_color, lw=2.0, ls="--",
                 label="Literature mean")
 
-        # simulation band
-        sim_mean, sim_lo, sim_hi = sim_ci_bands[key]
-        ax.fill_between(k, sim_lo, sim_hi, alpha=ci_alpha + 0.08, color=sim_color,
-                        label="ABM 95% CI")
-        ax.plot(k, sim_mean, color=sim_color, lw=2.2,
-                label="ABM mean")
+        # simulation curve (or band)
+        sim_val = sim_ci_bands[key]
+        if isinstance(sim_val, np.ndarray):
+            # Line only — no CI band
+            ax.plot(k, sim_val, color=sim_color, lw=2.2, label="ABM fitted")
+        else:
+            sim_mean, sim_lo, sim_hi = sim_val
+            ax.fill_between(k, sim_lo, sim_hi, alpha=ci_alpha + 0.08,
+                            color=sim_color, label="ABM 95% CI")
+            ax.plot(k, sim_mean, color=sim_color, lw=2.2, label="ABM mean")
 
         ax.set_xlabel("Density (k) (veh/mi)", fontsize=10)
         ax.set_title(title, fontsize=11, fontweight="bold")
@@ -435,6 +481,178 @@ def plot_kv_ci_comparison(k, lit_ci_bands, sim_ci_bands,
         fig.savefig(save_path, dpi=150, bbox_inches="tight")
     return fig, axes
 
+
+def plot_kv_scatter_ci(lit_ci_bands, kv_df, n_bins=30,
+                       scatter_alpha=0.02, ci_alpha=0.18, grid_alpha=0.3,
+                       save_path=None):
+    """3-panel figure: literature CI bands with raw sim data and binned mean line.
+
+    Parameters
+    ----------
+    lit_ci_bands : dict
+        Keys: "greenshields", "greenberg", "underwood".
+        Values: (v_mean, v_lo, v_hi) arrays from ci_bands_from_ranges().
+    kv_df : DataFrame
+        Output of process_sweep_validation() with columns k_vehmi, v_mph.
+    n_bins : int
+        Number of equal-width density bins for the mean speed line.
+
+    Returns (fig, axes).
+    """
+    k_obs = kv_df["k_vehmi"].values
+    v_obs = kv_df["v_mph"].values
+
+    # bin-average for mean line
+    k_ba, v_ba = bin_average_kv(k_obs, v_obs, n_bins=n_bins)
+
+    # infer k_range from lit_ci_bands (all share same length)
+    first_key = next(iter(lit_ci_bands))
+    n_k = len(lit_ci_bands[first_key][0])
+    k_max = k_obs.max()
+    k_range = np.linspace(0.5, k_max, n_k)
+
+    panels = [
+        ("greenshields", "Greenshields (1935)", "#2196F3", (0, 95)),
+        ("greenberg",    "Greenberg (1959)",    "#E91E63", (0, 110)),
+        ("underwood",    "Underwood (1961)",    "#4CAF50", (0, 95)),
+    ]
+
+    fig, axes = plt.subplots(1, 3, figsize=(18, 6), sharey=False)
+
+    for ax, (key, title, color, ylim) in zip(axes, panels):
+        # literature CI band
+        lit_mean, lit_lo, lit_hi = lit_ci_bands[key]
+        ax.fill_between(k_range, lit_lo, lit_hi, alpha=ci_alpha, color=color,
+                        label="Literature 95% CI")
+        ax.plot(k_range, lit_mean, color=color, lw=2.0, ls="--",
+                label="Literature mean")
+
+        # raw sim scatter
+        ax.scatter(k_obs, v_obs, s=2, alpha=scatter_alpha, color="#888",
+                   edgecolors="none", rasterized=True, label="Sim observations")
+
+        # binned mean line
+        ax.plot(k_ba, v_ba, color="#FF6F00", lw=2.5, zorder=5,
+                label=f"Sim mean ({n_bins} bins)")
+
+        ax.set_xlabel("Density (k) (veh/mi)", fontsize=10)
+        ax.set_title(title, fontsize=11, fontweight="bold")
+        ax.legend(fontsize=7, loc="upper right")
+        ax.grid(True, alpha=grid_alpha)
+        ax.set_xlim(0, k_max)
+        ax.set_ylim(*ylim)
+
+    axes[0].set_ylabel("Speed v (mph)", fontsize=10)
+    axes[1].set_ylabel("")
+    axes[2].set_ylabel("")
+
+    fig.suptitle(
+        "Speed\u2013Density (k\u2013v) Fundamental Diagram\n"
+        "Literature CI vs Raw ABM Simulation Data",
+        fontsize=13, fontweight="bold",
+    )
+    fig.tight_layout()
+    if save_path:
+        fig.savefig(save_path, dpi=150, bbox_inches="tight")
+    return fig, axes
+
+
+def plot_kv_scatter_fit(kv_df, k_range=None, n_bins=50, n_mc=2000, seed=42,
+                        scatter_alpha=0.05, ci_alpha=0.20, grid_alpha=0.3,
+                        save_path=None):
+    """3-panel k-v figure with raw observations and NLS-fitted curves with CIs.
+
+    Parameters
+    ----------
+    kv_df : DataFrame
+        Output of process_sweep_validation() with columns k_vehmi, v_mph.
+    k_range : array-like, optional
+        Density values for fitted curves. Default np.linspace(0.5, 250, 500).
+    n_mc : int
+        Monte Carlo samples for CI bands from fitted pcov.
+    seed : int
+        RNG seed.
+    scatter_alpha : float
+        Alpha for observation scatter points.
+    ci_alpha : float
+        Alpha for CI band fill.
+    grid_alpha : float
+        Alpha for grid lines.
+    save_path : str or None
+        If set, save figure to this path.
+
+    Returns
+    -------
+    fig, axes
+    """
+    if k_range is None:
+        k_range = np.linspace(0.5, 250, 500)
+
+    k_obs = kv_df["k_vehmi"].values
+    v_obs = kv_df["v_mph"].values
+
+    models = [
+        ("Greenshields (1935)", greenshields, [45, 200], "#2196F3"),
+        ("Greenberg (1959)",    greenberg,    [25, 200], "#E91E63"),
+        ("Underwood (1961)",    underwood,    [45, 30],  "#4CAF50"),
+    ]
+
+    fig, axes = plt.subplots(1, 3, figsize=(18, 6), sharey=False)
+    rng = np.random.default_rng(seed)
+
+    for ax, (title, model_fn, p0, color) in zip(axes, models):
+        # Scatter raw observations
+        ax.scatter(k_obs, v_obs, s=4, alpha=scatter_alpha, color=color,
+                   edgecolors="none", label="Observations", rasterized=True)
+
+        # Bin-average for balanced fitting
+        k_ba, v_ba = bin_average_kv(k_obs, v_obs, n_bins=n_bins)
+
+        # Fit model to bin-averaged data
+        result = fit_model(model_fn, k_ba, v_ba, p0=p0, model_name=title)
+
+        if result["converged"]:
+            popt = result["params"]
+            pcov = result["pcov"]
+            r2 = result["r2"]
+
+            # Fitted mean curve
+            v_mean = model_fn(k_range, *popt)
+            ax.plot(k_range, v_mean, color=color, lw=2.2, label="Fitted mean")
+
+            # CI bands from pcov via MC
+            param_samples = rng.multivariate_normal(popt, pcov, n_mc)
+            param_samples = np.clip(param_samples, 0.1, None)
+            curves = np.array([model_fn(k_range, *p) for p in param_samples])
+            v_lo, v_hi = np.percentile(curves, [2.5, 97.5], axis=0)
+            ax.fill_between(k_range, v_lo, v_hi, color=color, alpha=ci_alpha,
+                            label="95% CI")
+
+            ax.set_title(f"{title}\n$R^2$ = {r2:.3f}", fontsize=11,
+                         fontweight="bold")
+        else:
+            ax.set_title(f"{title}\n(no convergence)", fontsize=11,
+                         fontweight="bold")
+
+        ax.set_xlabel("Density (k) (veh/mi)", fontsize=10)
+        ax.set_xlim(0, k_range.max())
+        ax.grid(True, alpha=grid_alpha)
+        ax.legend(fontsize=7, loc="upper right")
+
+    ylims = [(0, 95), (0, 110), (0, 95)]
+    for ax, yl in zip(axes, ylims):
+        ax.set_ylim(yl)
+    axes[0].set_ylabel("Speed v (mph)", fontsize=10)
+
+    fig.suptitle(
+        "Speed\u2013Density (k\u2013v) Fundamental Diagram\n"
+        "ABM Simulation Data \u2014 NLS Fit with 95% CI",
+        fontsize=13, fontweight="bold",
+    )
+    fig.tight_layout()
+    if save_path:
+        fig.savefig(save_path, dpi=150, bbox_inches="tight")
+    return fig, axes
 
 
 #===================================================================
@@ -563,34 +781,36 @@ def estimate_gaussian_params_from_entries(entries, param_key, n_obs_key="n_obs",
         return estimate_gaussian_params(values)
 
 
-def aggregate_fit_results(fit_results_by_model):
-    """Aggregate per-run fit_model() results into GaussianDist per parameter.
+def lit_param_dists(lit):
+    """Build parameter distributions from literature entries.
 
     Parameters
     ----------
-    fit_results_by_model : dict
+    lit : dict
         Keys: "greenshields", "greenberg", "underwood".
-        Values: list of fit_model() result dicts (one per run).
+        Values: lists of literature entry dicts (post unit-conversion).
 
     Returns
     -------
-    dict : {model_key: {param_name: GaussianDist, "n_runs": int}}
+    dict
+        {"greenshields": {"v_f": UniformDist, "k_j": GaussianDist},
+         "greenberg":    {"v_0": GaussianDist, "k_j": GaussianDist},
+         "underwood":    {"v_f": UniformDist, "k_0": GaussianDist}}
     """
-    param_indices = {
-        "greenshields": [("v_f", 0), ("k_j", 1)],
-        "greenberg":    [("v_0", 0), ("k_j", 1)],
-        "underwood":    [("v_f", 0), ("k_0", 1)],
+    return {
+        "greenshields": {
+            "v_f": estimate_gaussian_params_from_entries(lit["greenshields"], "v_f"),
+            "k_j": estimate_gaussian_params_from_entries(lit["greenshields"], "k_j"),
+        },
+        "greenberg": {
+            "v_0": estimate_gaussian_params_from_entries(lit["greenberg"], "v_0"),
+            "k_j": estimate_gaussian_params_from_entries(lit["greenberg"], "k_j"),
+        },
+        "underwood": {
+            "v_f": estimate_gaussian_params_from_entries(lit["underwood"], "v_f"),
+            "k_0": estimate_gaussian_params_from_entries(lit["underwood"], "k_0"),
+        },
     }
-
-    out = {}
-    for model_key, results in fit_results_by_model.items():
-        converged = [r for r in results if r.get("converged")]
-        entry = {"n_runs": len(converged)}
-        for param_name, idx in param_indices[model_key]:
-            vals = [r["params"][idx] for r in converged]
-            entry[param_name] = estimate_gaussian_params(vals)
-        out[model_key] = entry
-    return out
 
 
 def mc_ci_band(model_fn, param_distributions, k_range, n_mc=2000, seed=42,
@@ -617,57 +837,192 @@ def mc_ci_band(model_fn, param_distributions, k_range, n_mc=2000, seed=42,
 #===================================================================
 
 
-# --- Edie (1963) macroscopic FD computation ---
+def compute_snapshot_kv(df, road_length_m=19950, n_spatial=20, min_veh=2,
+                        road_parquet="data/roads/hw210_sl_and_curvs.parquet"):
+    """Compute instantaneous (k, v) observations from Tier 2 snapshot data.
 
-def compute_edie_kvq(df, road_length_m, n_spatial=20, n_temporal=30,
-                     tier2_sample_interval=10):
-    """Compute Edie (1963) k, q, v for a uniform time-space grid.
+    At each sampled step, counts vehicles in spatial bins along the road and
+    computes the arithmetic mean speed per bin. This avoids the Edie time-area
+    denominator issues that arise when most vehicles are queued off-road
+    (negative distance_traveled).
 
-    Each row in df represents tier2_sample_interval seconds of data for one vehicle.
-    Spatial bins use distance_traveled (cumulative meters) as the 1D road coordinate.
+    Parameters
+    ----------
+    df : DataFrame
+        Raw Tier 2 spatial data with columns: Step, AgentID, distance_traveled,
+        speed (mph), status.
+    road_length_m : float
+        Total road length in meters.
+    n_spatial : int
+        Number of spatial bins along the road.
+    min_veh : int
+        Minimum vehicles in a bin to include (filters noise).
+    road_parquet : str or None
+        Path to road geometry parquet with speed_limit and distance_traveled
+        columns. If provided, each bin gets the speed limit at its midpoint.
 
-    Returns DataFrame with columns:
-        x_mid_m, t_mid_step, k_vehmi, v_mph, q_vehhr, n_records
+    Returns DataFrame with columns: Step, x_bin, n_veh, k_vehmi, v_mph,
+    and speed_limit (if road_parquet is provided).
     """
+    on_road = df[
+        (df["distance_traveled"] >= 0)
+        & (df["distance_traveled"] <= road_length_m)
+        & (df["status"].isin(["driving", "slowing"]))
+    ].copy()
+
+    seg_length_mi = (road_length_m / n_spatial) / METERS_PER_MILE
+
     x_edges = np.linspace(0, road_length_m, n_spatial + 1)
-    t_min   = int(df["Step"].min())
-    t_max   = int(df["Step"].max())
-    t_edges = np.linspace(t_min, t_max, n_temporal + 1)
+    on_road["x_bin"] = pd.cut(
+        on_road["distance_traveled"], bins=x_edges,
+        labels=False, include_lowest=True,
+    )
+    on_road = on_road.dropna(subset=["x_bin"])
+    on_road["x_bin"] = on_road["x_bin"].astype(int)
 
-    dx_m    = x_edges[1] - x_edges[0]
-    dt_sec  = (t_edges[1] - t_edges[0]) * tier2_sample_interval
-    area    = dx_m * dt_sec
-
-    work = df.copy()
-    work["x_bin"] = pd.cut(work["distance_traveled"], bins=x_edges,
-                           labels=False, include_lowest=True)
-    work["t_bin"] = pd.cut(work["Step"], bins=t_edges,
-                           labels=False, include_lowest=True)
-    work = work.dropna(subset=["x_bin", "t_bin"])
-    work["x_bin"] = work["x_bin"].astype(int)
-    work["t_bin"] = work["t_bin"].astype(int)
-    work["t_i"]   = float(tier2_sample_interval)
-
-    grouped = work.groupby(["x_bin", "t_bin"], observed=True)
-    stats = grouped.agg(
-        sum_ti=("t_i",         "sum"),
-        sum_di=("dist_step_m", "sum"),
-        n_records=("AgentID",  "count"),
+    grouped = on_road.groupby(["Step", "x_bin"], observed=True).agg(
+        n_veh=("AgentID", "nunique"),
+        v_mph=("speed", "mean"),
     ).reset_index()
 
-    stats["k_vehm"]   = stats["sum_ti"]  / area
-    stats["q_vehsec"] = stats["sum_di"]  / area
-    stats["v_mps"]    = (stats["sum_di"] / stats["sum_ti"]).fillna(0)
+    grouped["k_vehmi"] = grouped["n_veh"] / seg_length_mi
 
-    stats["k_vehmi"] = stats["k_vehm"]   * METERS_PER_MILE
-    stats["q_vehhr"] = stats["q_vehsec"] * 3600.0
-    stats["v_mph"]   = stats["v_mps"]    * (3600.0 / METERS_PER_MILE)
+    # Map each spatial bin to its speed limit via bin midpoint
+    if road_parquet is not None:
+        road = pd.read_parquet(road_parquet, columns=["distance_traveled", "speed_limit"])
+        road = road.sort_values("distance_traveled").reset_index(drop=True)
+        bin_midpoints = (x_edges[:-1] + x_edges[1:]) / 2.0
+        sl_by_bin = np.searchsorted(road["distance_traveled"].values, bin_midpoints, side="right") - 1
+        sl_by_bin = np.clip(sl_by_bin, 0, len(road) - 1)
+        bin_sl_map = dict(enumerate(road["speed_limit"].values[sl_by_bin]))
+        grouped["speed_limit"] = grouped["x_bin"].map(bin_sl_map)
 
-    stats["x_mid_m"]    = x_edges[stats["x_bin"]] + dx_m / 2
-    stats["t_mid_step"] = (t_edges[stats["t_bin"].values].astype(int)
-                           + int((t_edges[1] - t_edges[0]) / 2))
+    return grouped[grouped["n_veh"] >= min_veh].copy()
 
-    return stats[stats["n_records"] >= 3].copy()
+
+def bin_average_kv(k, v, n_bins=50):
+    """Bin-average speed observations by density for balanced model fitting.
+
+    Discretizes k into equal-width bins, computes mean v per bin.
+    Returns only bins with at least 1 observation.
+    """
+    pos = k > 0
+    if pos.sum() == 0:
+        return np.array([]), np.array([])
+    k_edges = np.linspace(k[pos].min(), k.max(), n_bins + 1)
+    bin_idx = np.digitize(k, k_edges) - 1
+    bin_idx = np.clip(bin_idx, 0, n_bins - 1)
+
+    k_avg, v_avg = [], []
+    for i in range(n_bins):
+        mask = bin_idx == i
+        if mask.sum() > 0:
+            k_avg.append(k[mask].mean())
+            v_avg.append(v[mask].mean())
+    return np.array(k_avg), np.array(v_avg)
+
+
+def fit_kv_models(kv_df, k_range=None, n_bins=50):
+    """Fit classical models to pooled k-v data with bin-averaging.
+
+    Parameters
+    ----------
+    kv_df : DataFrame
+        Output of process_sweep_validation() with columns k_vehmi, v_mph.
+    k_range : array-like, optional
+        Density values for evaluating fitted curves. Default np.linspace(0.5, 250, 500).
+    n_bins : int
+        Number of density bins for bin-averaging before fit.
+
+    Returns
+    -------
+    sim_params : dict
+        {model_key: {"p0_name": val, "p1_name": val, "r2": float}}
+        Fitted parameter point estimates.
+    sim_curves : dict
+        {model_key: v_mean_array} — fitted curve evaluated at k_range,
+        ready for plot_kv_ci_comparison() as (v_mean, v_mean, v_mean).
+    """
+    if k_range is None:
+        k_range = np.linspace(0.5, 250, 500)
+
+    k_obs = kv_df["k_vehmi"].values
+    v_obs = kv_df["v_mph"].values
+    k_ba, v_ba = bin_average_kv(k_obs, v_obs, n_bins=n_bins)
+
+    models = [
+        ("greenshields", greenshields, [45, 200], ["v_f", "k_j"]),
+        ("greenberg",    greenberg,    [25, 200], ["v_0", "k_j"]),
+        ("underwood",    underwood,    [45, 30],  ["v_f", "k_0"]),
+    ]
+
+    sim_params = {}
+    sim_curves = {}
+
+    for model_key, model_fn, p0, param_names in models:
+        result = fit_model(model_fn, k_ba, v_ba, p0=p0, model_name=model_key)
+
+        if not result["converged"]:
+            sim_params[model_key] = {"r2": np.nan, "converged": False}
+            sim_curves[model_key] = model_fn(k_range, *p0)
+            continue
+
+        popt = result["params"]
+        entry = {"r2": result["r2"], "converged": True}
+        for name, val in zip(param_names, popt):
+            entry[name] = round(float(val), 2)
+        sim_params[model_key] = entry
+        sim_curves[model_key] = model_fn(k_range, *popt)
+
+    return sim_params, sim_curves
+
+
+def process_sweep_validation(sweep_results_path, seasons_dir, road_length_m=19950,
+                              n_spatial=20):
+    """Process all runs from a validation sweep into a combined snapshot k-v DataFrame.
+
+    Parameters
+    ----------
+    sweep_results_path : str or Path
+        Path to sweep_*_results.parquet.
+    seasons_dir : str or Path
+        Directory containing season output folders.
+    road_length_m : float
+        Road length in meters.
+    n_spatial : int
+        Number of spatial bins for snapshot density.
+
+    Returns
+    -------
+    DataFrame
+        Combined snapshot k-v data with columns: season_id, Step, x_bin,
+        n_veh, v_mph, k_vehmi.
+    """
+    results_df = pd.read_parquet(sweep_results_path)
+    frames = []
+
+    for _, row in results_df.iterrows():
+        sid = row["season_id"]
+        path = f"{seasons_dir}/{sid}/day_0_spatial.parquet"
+
+        try:
+            df = pd.read_parquet(path)
+        except (FileNotFoundError, OSError):
+            continue
+
+        kv = compute_snapshot_kv(df, road_length_m=road_length_m, n_spatial=n_spatial)
+        if len(kv) == 0:
+            continue
+
+        kv["season_id"] = sid
+        frames.append(kv)
+
+    if not frames:
+        return pd.DataFrame(columns=["season_id", "Step", "x_bin", "n_veh", "v_mph", "k_vehmi", "speed_limit"])
+
+    return pd.concat(frames, ignore_index=True)[
+        ["season_id", "Step", "x_bin", "n_veh", "v_mph", "k_vehmi", "speed_limit"]
+    ]
 
 
 # --- NLS model fitting ---
@@ -703,33 +1058,3 @@ def fit_model(model_fn, k_obs, v_obs, p0, bounds=(0, np.inf), model_name=""):
     except (RuntimeError, ValueError) as exc:
         return {"converged": False, "model": model_name,
                 "n_obs": len(k_fit), "error": str(exc)}
-
-# --- ABM comparison table ---
-
-def build_comparison_table(fit_results, lit_means):
-    """Build a structured comparison of ABM-fitted params vs literature means.
-
-    lit_means: dict of {model_name: {param_label: value}}
-    """
-    param_map = {
-        "Greenshields": [("Free-Flow Speed (v_f) (mph)",    0), ("Jam Density (k_j) (veh/mi)",      1)],
-        "Greenberg":    [("Speed Constant (v_0) (mph)",     0), ("Jam Density (k_j) (veh/mi)",      1)],
-        "Underwood":    [("Free-Flow Speed (v_f) (mph)",    0), ("Optimal Density (k_0) (veh/mi)",  1)],
-    }
-    rows = []
-    for result in fit_results:
-        mname = result["model"]
-        row   = {"Model": mname, "Converged": result["converged"]}
-        if result["converged"]:
-            for col_name, idx in param_map.get(mname, []):
-                fitted_val = result["params"][idx]
-                lit_val    = lit_means.get(mname, {}).get(col_name, np.nan)
-                row[f"{col_name} (ABM)"] = round(fitted_val, 2)
-                row[f"{col_name} (lit)"] = round(lit_val,    2)
-                if not np.isnan(lit_val) and lit_val != 0:
-                    row["% diff"] = round(100 * (fitted_val - lit_val) / lit_val, 1)
-            row["RMSE (mph)"] = round(result["rmse"], 2)
-            row["pseudo-R²"]  = round(result["r2"],   3)
-            row["N cells"]    = result["n_obs"]
-        rows.append(row)
-    return pd.DataFrame(rows)
