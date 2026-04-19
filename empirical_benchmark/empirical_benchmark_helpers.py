@@ -482,7 +482,7 @@ def plot_kv_ci_comparison(k, lit_ci_bands, sim_ci_bands,
     return fig, axes
 
 
-def plot_kv_scatter_ci(lit_ci_bands, kv_df, n_bins=30,
+def plot_kv_scatter_ci(lit_ci_bands, kv_df, k_range, n_bins=30,
                        scatter_alpha=0.02, ci_alpha=0.18, grid_alpha=0.3,
                        save_path=None):
     """3-panel figure: literature CI bands with raw sim data and binned mean line.
@@ -494,6 +494,9 @@ def plot_kv_scatter_ci(lit_ci_bands, kv_df, n_bins=30,
         Values: (v_mean, v_lo, v_hi) arrays from ci_bands_from_ranges().
     kv_df : DataFrame
         Output of process_sweep_validation() with columns k_vehmi, v_mph.
+    k_range : array-like
+        Density values (veh/mi) used when computing lit_ci_bands. Controls
+        the x-axis range.
     n_bins : int
         Number of equal-width density bins for the mean speed line.
 
@@ -502,14 +505,10 @@ def plot_kv_scatter_ci(lit_ci_bands, kv_df, n_bins=30,
     k_obs = kv_df["k_vehmi"].values
     v_obs = kv_df["v_mph"].values
 
-    # bin-average for mean line
-    k_ba, v_ba = bin_average_kv(k_obs, v_obs, n_bins=n_bins)
-
-    # infer k_range from lit_ci_bands (all share same length)
-    first_key = next(iter(lit_ci_bands))
-    n_k = len(lit_ci_bands[first_key][0])
-    k_max = k_obs.max()
-    k_range = np.linspace(0.5, k_max, n_k)
+    # bin-average for mean line (only within k_range)
+    k_max = k_range.max()
+    in_range = k_obs <= k_max
+    k_ba, v_ba = bin_average_kv(k_obs[in_range], v_obs[in_range], n_bins=n_bins)
 
     panels = [
         ("greenshields", "Greenshields (1935)", "#2196F3", (0, 95)),
